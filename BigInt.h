@@ -337,7 +337,7 @@ BigInt& BigInt:: rLimbShift(int i) {
 	return *this;
     }
     std::vector<limb_t> vt;
-    vt.insert(vt.begin(), this->limbs.end() - i, this->limbs.end());
+    vt.insert(vt.begin(), this->limbs.begin() + i, this->limbs.end());
     this->limbs.swap(vt);
     return *this;
 }
@@ -629,11 +629,9 @@ BigInt& BigInt::operator/=(const BigInt& rhs){
 	    this->limbs[i] %= tmp.limbs[i];
 	}
 
-    //This does NOT work at the moment. Currently if given a number with limbs 10, XXXXX,
-    //and dividing by another number YYYY, the correct answer should be 30. Instead 
-    //it will return 30 + 10 = 40
-    //this likely means that there is a problem with the subtraction routine 
+    //Currently uses the "Grade school" method for division. 
     } else {
+	std::cout << "Dividing! num, denom: " << *this << " " << rhs << std::endl;
 	tmp = tmp.lLimbShift(this->size() - rhs.size());
 	while(abs(tmp) >= abs(rhs)) { 
 	    acc = acc.lLimbShift(1);
@@ -642,7 +640,8 @@ BigInt& BigInt::operator/=(const BigInt& rhs){
 		acc += BigInt::ONE;
 	    }
 	    std::cout << "acc: " << acc << std::endl;
-	    tmp = tmp.rLimbShift(1);    
+	    tmp = tmp.rLimbShift(1);
+	    std::cout << "tmp, rhs" << tmp << " " << rhs << std::endl;   
 	}
     }
     acc.negative = this->negative ^ rhs.negative;
@@ -714,7 +713,7 @@ bool BigInt::operator<(const BigInt& rhs) const{
 	return result;
 
     } else {
-	if(this->size() < rhs.size()) return true;
+	if(this->size() != rhs.size()) return this->size() < rhs.size();
 	
 	/*
 	* Starting at "false" and checking if each limb is either over or under ensures 

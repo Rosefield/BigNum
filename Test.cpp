@@ -167,6 +167,20 @@ void test2Pow1024(){
     std::cout << "Correct? " << testEquals(pow, actual) << std::endl;   
 }
 
+void test3Pow512() {
+    std::chrono::time_point<std::chrono::system_clock> start, end;
+    std::chrono::duration<double> elapsed_time;
+    start = std::chrono::system_clock::now();
+    BigInt pow(3);
+    pow = pow.pow(512);
+    end = std::chrono::system_clock::now();
+    elapsed_time = end - start;
+    std::cout<< "3Pow512 took: " << elapsed_time.count() << " computing " << pow << std::endl;
+    std::vector<limb_t> actual{2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+    std::cout << "Correct? " << testEquals(pow, actual) << std::endl;   
+
+}
+
 void test10Pow50() {
     std::chrono::time_point<std::chrono::system_clock> start, end;
     std::chrono::duration<double> elapsed_time;
@@ -181,6 +195,49 @@ void test10Pow50() {
 
 
 }
+
+void testDivRand512Bit() {
+    std::chrono::time_point<std::chrono::system_clock> start, end;
+    std::chrono::duration<double> elapsed_time;
+    //512 bits
+    BigInt num("22479199231365811817124860008034"
+               "86229160630675450396401816569207"
+               "37104752501976414843519588079979"
+               "01710354041585586289392397420347"
+               "216513925045972181584884921");
+    //500 bits
+    BigInt denom("351508594074011603394279375147"
+                 "626833956407011572250308540816"
+                 "854541429976970595757637034702"
+                 "593071101429245293222692961211"
+                 "2896690197169368617519259819528");
+    start = std::chrono::system_clock::now();
+    end = std::chrono::system_clock::now();
+    BigInt result = num / denom;
+    elapsed_time = end - start;
+    std::cout<< "DivRand512Bit took: " << elapsed_time.count() << " computing " << result << std::endl;
+    std::vector<limb_t> actual{6395};
+    std::cout << "Correct? " << testEquals(result, actual) << std::endl;   
+}
+
+void test3Pow512Div2Pow512() {
+    std::chrono::time_point<std::chrono::system_clock> start, end;
+    std::chrono::duration<double> elapsed_time;
+    BigInt pow2(2);
+    pow2 = pow2.pow(512);
+    BigInt pow3(3);
+    pow3 = pow3.pow(512);
+    start = std::chrono::system_clock::now();
+    BigInt pow = pow3 / pow2;
+    end = std::chrono::system_clock::now();
+    elapsed_time = end - start;
+    std::cout<< "3Pow512Div2Pow512 took: " << elapsed_time.count() << " computing " << pow << std::endl;
+    std::vector<limb_t> actual{2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+    std::cout << "Correct? " << testEquals(pow, actual) << std::endl;   
+
+}
+
+
 int main() {
 
     //Addition Tests
@@ -188,6 +245,8 @@ int main() {
 
     //Subtraction Tests
     test500FibSub499Fib();
+    
+
 
     //Multiplication Tests
     test20FactQuad();
@@ -201,7 +260,7 @@ int main() {
     test10Pow50();
     
     //Division Tests
-    
-
+    testDivRand512Bit();    
+    test3Pow512Div2Pow512();
 }
 
