@@ -232,20 +232,65 @@ void test3Pow512Div2Pow512() {
     end = std::chrono::system_clock::now();
     elapsed_time = end - start;
     std::cout<< "3Pow512Div2Pow512 took: " << elapsed_time.count() << " computing " << pow << std::endl;
-    std::vector<limb_t> actual{2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+    std::vector<limb_t> actual{1483733,662018629,1236000823,1498554168,837056997,892058291,616689941,1251421047,1182766622,442154954};
     std::cout << "Correct? " << testEquals(pow, actual) << std::endl;   
 
 }
 
+void testDivAddBack() {
+    std::chrono::time_point<std::chrono::system_clock> start, end;
+    std::chrono::duration<double> elapsed_time;
+    BigInt num("12345678998765432112345678901111111111222222222");
+    BigInt denom("12345678998765431212340871");
+    start = std::chrono::system_clock::now();
+    BigInt q = num / denom;
+    end = std::chrono::system_clock::now();
+    elapsed_time = end - start;
+    std::cout<< "testDivAddBack took: " << elapsed_time.count() << " computing " << q << std::endl;
+    std::vector<limb_t> actual{216,1804819339,1587616964};
+    std::cout << "Correct? " << testEquals(q, actual) << std::endl;   
+}
+
+void testRemainderlessMod() {
+    std::chrono::time_point<std::chrono::system_clock> start, end;
+    std::chrono::duration<double> elapsed_time;
+    BigInt num("10000000000000000000000000000000000");
+    BigInt modulus("10000000000000000");
+    start = std::chrono::system_clock::now();
+    BigInt q = num % modulus;
+    end = std::chrono::system_clock::now();
+    elapsed_time = end - start;
+    std::cout<< "testRemainderlessMod took: " << elapsed_time.count() << " computing " << q << std::endl;
+    std::vector<limb_t> actual{0};
+    std::cout << "Correct? " << testEquals(q, actual) << std::endl;   
+}
+
+void testLongToDecimal() {
+    std::chrono::time_point<std::chrono::system_clock> start, end;
+    std::chrono::duration<double> elapsed_time;
+    
+    std::string actual = "22479199231365811817124860008034"
+               "86229160630675450396401816569207"
+               "37104752501976414843519588079979"
+               "01710354041585586289392397420347"
+               "216513925045972181584884921";
+    BigInt t(actual);
+    start = std::chrono::system_clock::now();
+    std::string q = t.ToDecimal();
+    end = std::chrono::system_clock::now();
+    elapsed_time = end - start;
+    std::cout<< "testLongToDecimal took: " << elapsed_time.count() << " computing " << q << std::endl;
+    std::cout << "Correct? " << (actual == q) << std::endl;   
+}
+
 
 int main() {
-
+/*
     //Addition Tests
     test500Fib();
-
+    
     //Subtraction Tests
     test500FibSub499Fib();
-    
 
 
     //Multiplication Tests
@@ -258,9 +303,14 @@ int main() {
     test2Pow100();
     test2Pow1024();
     test10Pow50();
-    
+   
     //Division Tests
     testDivRand512Bit();    
     test3Pow512Div2Pow512();
+    testDivAddBack();
+*/ 
+    testRemainderlessMod();
+    testLongToDecimal();
+
 }
 

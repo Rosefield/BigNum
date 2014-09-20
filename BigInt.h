@@ -28,6 +28,7 @@ class BigInt {
 	BigInt(limb_t ull);
 //	BigInt(const char& c);
 	BigInt(const BigInt& b);
+	BigInt(BigInt&& rhs);
 
 	void swap(BigInt& rhs);
 	int size() const;
@@ -86,6 +87,7 @@ class BigInt {
 	BigInt highLimb() const;
 	BigInt highNLimbs(int n) const;
 	BigInt lowerLimbs() const;
+	BigInt getLimbsRange(int start, int end) const;
 };
 
 const BigInt BigInt::ZERO(0);
@@ -95,6 +97,7 @@ const BigInt BigInt::TEN(10);
 
 std::ostream& operator<<(std::ostream &strm, const BigInt& bn){
     strm << "Bigint= ";
+    strm << (bn.negative ? "negative " : "positive ");
     for(int i = bn.size() -1; i >= 0; i--) {
 	strm << bn.limbs[i] << " ";
     }	
@@ -116,20 +119,27 @@ std::string BigInt::ToBinary() const {
 std::string BigInt::ToDecimal() const {
     std::string ret;
     BigInt tmp(*this);
+    BigInt oneBillion("1000000000");
     while(tmp != BigInt::ZERO) {
 	std::stringstream ss;
 	ss << std::setfill('0') << std::setw(9);
-	ss << (tmp % 1000000000).limbs[0];
+	ss << (tmp % oneBillion).limbs[0];
 	std::string s = ss.str();
 	std::reverse(s.begin(), s.end());
 	ret += s;
-	//std::cout << "tmp, tmp%: " << tmp << (tmp % 1000000000) << std::endl;	
-	tmp /= 1000000000;
+	//std::cout << "tmp, tmp%: " << tmp << std::endl << (tmp % 1000000000) << std::endl;	
+	tmp /= oneBillion;
 	//std::cout << "tmp: " << tmp << std::endl;
     }
 
     std::reverse(ret.begin(), ret.end());
     
+    if(ret.size() >1 && ret[0] == '0') {
+	size_t pos = ret.find_first_not_of('0');
+	ret.erase(0,pos);	    
+    }
+
+
     return ret;
 }
 
@@ -140,9 +150,8 @@ BigInt::BigInt(): limbs(), bits(31), negative(false), threshold(static_cast<unsi
 
 //Assume string is in the form of [sign], digit , {digit}
 BigInt::BigInt(const std::string& s): BigInt(){
- //   std::cout << "String constructor! " << s << std::endl;
     if(s.size() < 19) {
-	BigInt(stoll(s));
+	*this = BigInt(stoll(s));
 	return;
     }       
 
@@ -176,7 +185,7 @@ BigInt::BigInt(const int i): BigInt() {
 */
 
 BigInt::BigInt(const long long ll): BigInt() { 
-    //std::cout << "Long long constructor! " << ll << std::endl;
+ //   std::cout << "Long long constructor! " << ll << std::endl;
     limb_t ull;
 
     if( ll < 0) {
@@ -198,15 +207,12 @@ BigInt::BigInt(limb_t ull): BigInt() {
 
 void BigInt::CtorHelper(limb_t ull) {
     //Push each set of bits onto the vector
- //   std::cout << "CtorHelper: " << ull;
     do {
 	//assign the $bits least significant bits to tmp
-	auto tmp = getBits(ull, bits);	
-//	std::cout << " " << tmp;
+	limb_t tmp = getBits(ull, bits);	
 	limbs.push_back(tmp);
 	ull >>= bits;
     } while(ull);
-//    std::cout << std::endl;
 }
 
 /*BigInt(const char& c){
@@ -215,6 +221,10 @@ void BigInt::CtorHelper(limb_t ull) {
 
 BigInt::BigInt(const BigInt& b): limbs(b.limbs), bits(b.bits), negative(b.negative), threshold(b.threshold) {
  //   std::cout << "Copy constructor!" << std::endl;
+}
+
+BigInt::BigInt(BigInt&& rhs): limbs(std::move(rhs.limbs)), bits(std::move(rhs.bits)), negative(std::move(rhs.negative)), threshold(std::move(rhs.threshold)) {
+    std::cout << "Move Constructor" << std::endl;
 }
 
 int BigInt::size() const{
@@ -236,7 +246,6 @@ void BigInt::reallign() {
 	    if(limbs[i] == 0 && carry == 0 && limbs.size() > 1) {
 		limbs.pop_back();
 		while(limbs.size() > 1 && limbs[limbs.size() -1] == 0) {
-		    std::cout << "stuck in a loop!" << std::endl;
 		    limbs.pop_back();
 		}
 		break;
@@ -485,7 +494,7 @@ BigInt& BigInt::operator-=(const BigInt& rhs){
 	    for(auto it = this->limbs.begin() +i + 1; it < this->limbs.end(); it++) {
 		if(*it > 0){
 		    *it -= 1;
-		    for(auto it2 = it; it2 > this->limbs.begin() + i + 1; it2--) {
+		    for(auto it2 = it -1; it2 > this->limbs.begin() + i + 1; it2--) {
 			*it2 = threshold -1;
 		    }
 		    this->limbs[i] += threshold;
@@ -608,6 +617,15 @@ BigInt BigInt::lowerLimbs() const{
     if(tmp.size() == 0) { tmp = BigInt::ZERO; }   
     return tmp;
 }
+
+BigInt BigInt::getLimbsRange(int start, int end) const {
+    BigInt tmp(*this);
+    std::vector<limb_t> vt;
+    vt.insert(vt.begin(),tmp.limbs.begin() + start, tmp.limbs.begin() + end);
+    tmp.limbs.swap(vt);
+    return tmp;
+}
+
 //Does not work.
 BigInt& BigInt::operator/=(const BigInt& rhs){
     if(rhs > *this) {
@@ -616,34 +634,56 @@ BigInt& BigInt::operator/=(const BigInt& rhs){
     }
     BigInt acc = BigInt::ZERO;
     BigInt tmp = rhs;
-    tmp.negative = this->negative;
-    if(tmp.size() == 1) {
-	
-	for(int i = this->size() -1; i >= 0; i--) {
-	    acc = acc.lLimbShift(1);
-	    if(i +1 != this->size()) {
-		this->limbs[i] |= (this->limbs[i+1] << bits);
-		this->limbs[i+1] = 0;
-	    }
-	    acc += (this->limbs[i] / tmp.limbs[i]);
-	    this->limbs[i] %= tmp.limbs[i];
-	}
-
-    //Currently uses the "Grade school" method for division. 
+    limb_t qhat, v_1, d;
+    v_1 = tmp.limbs[rhs.size() -1];
+    d = (threshold / (v_1 + 1));
+    //Normalize
+    if(d == 1) {
+	this->limbs.push_back(0);
     } else {
-	std::cout << "Dividing! num, denom: " << *this << " " << rhs << std::endl;
-	tmp = tmp.lLimbShift(this->size() - rhs.size());
-	while(abs(tmp) >= abs(rhs)) { 
-	    acc = acc.lLimbShift(1);
-	    while(*this > tmp) {
-		*this -= tmp;
-		acc += BigInt::ONE;
-	    }
-	    std::cout << "acc: " << acc << std::endl;
-	    tmp = tmp.rLimbShift(1);
-	    std::cout << "tmp, rhs" << tmp << " " << rhs << std::endl;   
-	}
+	*this *= d;
+	tmp *= d;
     }
+    v_1 = tmp.limbs[rhs.size()-1];	
+
+    int j = 0;
+    int m = this->size() - tmp.size() -1;
+    acc.limbs.resize(m+1, 0);
+    //For the algorithm our limbs are indexed so that the highest limb is 0, second highest 1, etc
+    //However, internal storage is the opposite where 0 is the minimal limb, so to
+    //compensate there are a lot of size() - j calls
+    do {
+	//Calculate qhat
+	if(this->limbs[this->size() -1 -j] == v_1) {
+	    qhat = threshold -1;
+	} else {
+	    qhat = ((this->limbs[this->size() -1 - j] << bits) | this->limbs[this->size() -2 - j]) / v_1; 
+	}
+	while(tmp.limbs[tmp.size() -2] * qhat > ((this->limbs[this->size() -1 - j] + this->limbs[this->size() -2 -j] - qhat * v_1) * threshold + 
+						  this->limbs[this->size() -3 - j])) {
+	    --qhat;
+	}
+	//mult and sub
+	BigInt uprime = this->getLimbsRange(this->size()-1-j-tmp.size(), this->size()-j);
+	uprime -= tmp * qhat;
+	//Super special case, should happen about 2/threshold times
+	if(uprime < BigInt::ZERO) {
+	    //qhat was 1 too big causing uprime to be negative, decrement
+	    --qhat;
+	    uprime += tmp;	
+	}	
+	//maintain number of digits
+	while(uprime.size() < tmp.size()+1) {
+	    uprime.limbs.push_back(0);
+	}
+	//Replace the values in *this with the "divided" values held in uprime
+	std::swap_ranges(uprime.limbs.begin(), uprime.limbs.end(), this->limbs.end()-1-j-tmp.size());
+	//uprime should be at most 1 limb long after the subtraction (and without the readd stage)
+	acc.limbs[m-j] = qhat;
+
+	++j;
+    } while (j <= m);
+
     acc.negative = this->negative ^ rhs.negative;
     *this = acc;
     this->reallign();
@@ -656,19 +696,12 @@ BigInt& BigInt::operator%=(const BigInt& rhs){
 	return *this;
     }
 
-    BigInt tmp = rhs;
-    tmp.negative = this->negative;
-    tmp = tmp.lLimbShift(this->size() - rhs.size());
-    while(*this > rhs) { 
-	while(*this > tmp) {
-	    *this -= tmp;
-	}
-	tmp = tmp.rLimbShift(1);    
-    }  
+    *this -= (*this / rhs)*rhs;
 
     this->reallign();
     return *this;
-}
+    }
+
 BigInt BigInt::operator-() const{
     BigInt tmp(*this);
     tmp.negative = !tmp.negative;
@@ -683,7 +716,7 @@ bool BigInt::operator==(const BigInt& rhs) const{
     for(int i = this->size() -1; i >= 0; i--) {
 	if (this->limbs[i] != rhs.limbs[i]) result = false;	
     }
-    
+
     return result;
 }
 
