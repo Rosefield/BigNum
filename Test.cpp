@@ -395,7 +395,6 @@ void testCompositeModExp() {
     //~512 bit semi-prime
     BigInt n(p * q);
 
-    std::cout << "N val: " << n << std::endl;    
 
     start = std::chrono::system_clock::now();
     BigInt c = m.pow(e, n);
@@ -406,6 +405,8 @@ void testCompositeModExp() {
 #endif
     BigInt actual("2964838268779463116114800686128261984992461004875135797684366739503797344419"
 		 "53324251806585497342796724135747651574033488424137969860812870453290786776434");
+    std::cout << "actual c: " << actual << std::endl;
+
     std::cout << "512 RSA Encrypt Correct? " << (c == actual) << std::endl; 
 
     BigInt d("61209282410124760555153387834751911935998153976979367427081753749948289104979274"

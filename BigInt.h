@@ -835,6 +835,12 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
 	//mult and sub
 	BigInt uprime = a.getLimbsRange(a.size()-1-j-tmp.size(), a.size()-j);
 	uprime -= tmp * qhat;
+
+	//The estimator was 1 too low, fix
+	if(uprime > tmp) {
+	    ++qhat;
+	    uprime -= tmp;
+	}
 	//Super special case, should happen about 2/threshold times
 	if(uprime < BigInt::ZERO) {
 	    //qhat was 1 too big causing uprime to be negative, decrement
@@ -860,8 +866,14 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
     }
 
     if(rem != nullptr) {
+	a.reallign();
+	if(a.size() > tmp.size() +1) {
+	    std::cout << "failure in division" << std::endl;
+	    a = a.getLimbsRange(0, tmp.size());
+	}	
+
 	//Manually resize the leftover value, as sometimes its higher limbs are polluted with 1s; Investigate the cause of that
-	a = a.getLimbsRange(0, tmp.size());
+    	//as it seems to relate to a failure of the division
 	if(d == 1) {
 	    *rem = a;
 	} else {
