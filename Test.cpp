@@ -17,7 +17,7 @@ BigInt Fibonacci(int n) {
 BigInt Factorial(int n) {
     BigInt result(1);
 
-    for(int i = 2; i <= n; ++i) {
+    for(limb_t i = 2; i <= n; ++i) {
 	//std::cout << "result, i: " << result << " " << i << std::endl;
 	result *= i;
     }
@@ -62,10 +62,6 @@ void test500FibSub499Fib() {
 #ifdef _PRINT_VALS
     std::cout<< "500FibSub499Fib took: " << elapsed_time.count() << " computing " << subFibs << std::endl;
 #endif
-    /*
-    std::vector<limb_t> actual{31, 268010877,1041980198,1505931748,939335682,475289477,
-                   384828411,411953712,1000216971,1090861368,1011151204,315178285};
-    */
     BigInt actual = Fibonacci(498);
     std::cout << "Fib(500) - Fib(499) Correct? " << (subFibs == actual) << std::endl;   
 }
@@ -405,7 +401,6 @@ void testCompositeModExp() {
 #endif
     BigInt actual("2964838268779463116114800686128261984992461004875135797684366739503797344419"
 		 "53324251806585497342796724135747651574033488424137969860812870453290786776434");
-    std::cout << "actual c: " << actual << std::endl;
 
     std::cout << "512 RSA Encrypt Correct? " << (c == actual) << std::endl; 
 
@@ -452,7 +447,7 @@ int main() {
     test2Pow31Pow2Pow10();
 /**/
 
-/*   
+/*
     //Division Tests
     testDivRand512Bit();    
     test3Pow512Div2Pow512();

@@ -1,5 +1,5 @@
 CC = clang
-CFLAGS = --std=c++11 -lstdc++ -march=native -g -D_PRINT_VALS
+CFLAGS = --std=c++11 -lstdc++ -march=native -g -D_PRINT_VALS -O3
 OBJS = Test.o
 
 %.o : %.cpp; $(CC) -c -o $@ $< $(CFLAGS)
