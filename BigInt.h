@@ -1,6 +1,5 @@
 #ifndef _BigInt
 #define _BigInt
-
 #include <string>
 #include <iostream>
 #include <sstream>
@@ -23,20 +22,14 @@ class BigInt {
 	BigInt();   
 	BigInt(const std::string& s);
 	BigInt(const int i);
-//	BigInt(const long l);
 	BigInt(const long long ll);
 	BigInt(limb_t ull);
-//	BigInt(const char& c);
 	BigInt(const BigInt& b);
 	BigInt(BigInt&& rhs);
 
 	void swap(BigInt& rhs);
 	inline size_t size() const;
     
-	/*
-	void realloc();
-    	void realloc(unsigned);
-	*/
 
    	BigInt gcd(const BigInt& rhs) const;
 	limb_t Log2(limb_t) const;
@@ -92,6 +85,7 @@ class BigInt {
 	BigInt naiveMul(const BigInt& n1, const limb_t& n2);
 
 	//Division
+	void div(BigInt * dv, const BigInt& num, const limb_t& denom, BigInt * rem) const;
 	void div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * rem) const;
 
 	//Exponentiation
@@ -136,7 +130,9 @@ std::string BigInt::ToBinary() const {
 std::string BigInt::ToDecimal() const {
     std::string ret;
     BigInt tmp(*this);
-    BigInt oneBillion("1000000000");
+    limb_t oneBillion = 1000000000;
+    //BigInt oneBillion("1000000000");
+    //limb_t digits;
     BigInt digits;
     while(tmp != BigInt::ZERO) {
 	std::stringstream ss;
@@ -146,12 +142,10 @@ std::string BigInt::ToDecimal() const {
 	    digits.limbs.push_back(0);
 	}
 	ss << digits.limbs[0];
+	//ss << digits;
 	std::string s = ss.str();
 	std::reverse(s.begin(), s.end());
 	ret += s;
-	//std::cout << "tmp, tmp%: " << tmp << std::endl << (tmp % 1000000000) << std::endl;	
-	//tmp /= oneBillion;
-	//std::cout << "tmp: " << tmp << std::endl;
     }
 
     std::reverse(ret.begin(), ret.end());
@@ -181,8 +175,8 @@ BigInt::BigInt(const std::string& s): BigInt(){
 	if(c == '+') negative = false;
 	else if(c == '-') negative = true;
 	else if(c >= '0' && c <= '9'){
-	    *this *= BigInt::TEN;
-	    *this += static_cast<int>(c - '0');
+	    *this *= 10;
+	    *this += static_cast<limb_t>(c - '0');
 	}
     }       
 }
@@ -217,7 +211,6 @@ BigInt::BigInt(const long long ll): BigInt() {
     } else {
 	ull = static_cast<limb_t>(ll);
     }
-
     CtorHelper(ull);
 
 }
@@ -363,8 +356,7 @@ BigInt& BigInt::lshift(int i){
 BigInt& BigInt::lLimbShift(int i){
     if(i == 0) return *this;
 
-    std::vector<limb_t> tmp(i, 0);
-    this->limbs.insert(this->limbs.begin(), tmp.begin(), tmp.end());
+    this->limbs.insert(this->limbs.begin(), i, 0);
     return *this;
 }
 
@@ -439,6 +431,7 @@ BigInt BigInt::modexp_montgomery(BigInt& base, BigInt& exp, BigInt& mod) const {
     size_t hi = bits.find_first_of('1');
     
     for(auto it = bits.begin() + hi +1; it < bits.end(); it++) {
+	//std::cout << "on bit num: " << it - (bits.begin() + hi + 1) << std::endl;
 	if(*it == '1') {
 	    t1 *= t2;
 	    t1 %= mod;
@@ -527,14 +520,6 @@ BigInt& BigInt::operator+=(const BigInt& rhs){
 	} else {
 	    carry = 0;
 	}
-
-	
-	//is there a better way to do this than checking for overflow which is undefined behavior?
-	//if(this->limbs[i] < rhs.limbs[i] + carry || (rhs.limbs[i] == ULLONG_MAX && carry)){
-	    //carry = 1;
-	//} else {
-	    //carry = 0;	
-	//}	
     }
       
     if (carry){
@@ -614,7 +599,24 @@ BigInt& BigInt::operator*=(const BigInt& rhs){
 }
 
 BigInt& BigInt::operator*=(const limb_t& rhs) {
-    *this = std::move(naiveMul(*this, rhs));
+    if(*this == BigInt::ZERO || rhs == 0) {
+	*this = BigInt::ZERO;
+	return *this;
+    }    
+    if(rhs == 1) {
+	return *this;
+    }
+
+    limb_t carry = 0;
+    for(int i = 0; i < this->size(); i++) {
+	this->limbs[i] = this->limbs[i] * rhs;
+	this->limbs[i] += carry;
+	carry = this->limbs[i] >> bits;
+	this->limbs[i] &= (threshold -1);
+    }
+    if(carry) {
+	this->limbs.push_back(carry);
+    }  
     return *this;
 }
 
@@ -644,10 +646,25 @@ BigInt BigInt::karatsuba(const BigInt& n1, const BigInt& n2) {
 
     z0 = karatsuba(n1l, n2l); 
     z2 = karatsuba(n1h, n2h);
-    z1 = karatsuba((n1l + n1h), (n2l + n2h)) - z2 - z0;
+    
+    //Same as 
+    //z1 = karatsuba((n1l + n1h), (n2l + n2h));
+    n1l += n1h;
+    n2l += n2h;
+    z1 = karatsuba(n1l, n2l);
+    
+    z1 -= z2;
+    z1 -= z0;
 
-    //Ensure that after the subtraction there isn't empty limbs at the head of z1
-    return (z2.lLimbShift(2*m)) + (z1.lLimbShift(m)) + (z0);
+    z2.lLimbShift(2*m);
+    z2 += z1.lLimbShift(m);
+    z2 += z0;
+
+    //This is the same as, 
+    //return (z2.lLimbShift(2*m)) + (z1.lLimbShift(m)) + (z0);
+    //but removes the need for calling operator+()
+
+    return z2;
 }
 
 //Knuth Algorithm M
@@ -681,12 +698,28 @@ BigInt BigInt::naiveMul(const BigInt& n1, const limb_t& n2) {
 	return BigInt::ZERO;
     }
 
+    /*
+    limb_t carry = 0;
+    for(int i = 0; i < this->size(); i++) {
+	this->limbs[i] = this->limbs[i] * n2;
+	this->limbs[i] += carry;
+	carry = this->limbs[i] >> bits;
+	this->limbs[i] &= (threshold -1);
+    }
+    if(carry) {
+	this->limbs.push_back(carry);
+    }    
+    while(this->size() > 1) {
+	if(this->limbs.back() != 0) { break; }
+	this->limbs.pop_back();
+    }
+    */
+
     BigInt tmp;
     tmp.limbs.resize(n1.size() +1, 0);
     for(int i = 0; i < n1.size(); i++) {
-	limb_t carry = 0;
-	tmp.limbs[i] += n1.limbs[i] * n2 + carry;
-	carry = tmp.limbs[i] >> bits;
+	tmp.limbs[i] += n1.limbs[i] * n2;
+	limb_t carry = tmp.limbs[i] >> bits;
 	tmp.limbs[i] &= (threshold -1);
 	tmp.limbs[i + 1] = carry;
     }
@@ -783,8 +816,59 @@ BigInt& BigInt::operator%=(const BigInt& rhs){
     return *this;
 }
 
+void BigInt::div(BigInt * dv, const BigInt& num, const limb_t& denom, BigInt * rem) const {
+    if(num.size() == 1 && num.limbs[0] == denom) {
+	if(rem != nullptr) {
+	    //*rem = 0;
+	    *rem = BigInt::ZERO;
+	}
+	if(dv != nullptr) {
+	    *dv = BigInt::ONE;
+	}
+	return;
+    }
+    if(num.size() == 1 && num.limbs[0] < denom) {
+	if(rem != nullptr) {
+	   // *rem = num.limbs[0];
+	    *rem = num;
+	}
+	if(dv != nullptr) {
+	    *dv = BigInt::ZERO;
+	}
+	return;
+    }
+
+    BigInt acc = BigInt::ZERO;
+    acc.limbs.resize(num.size(), 0);
+
+    limb_t k = 0;
+    for(int i = num.size() -1; i >= 0; --i) {
+	acc.limbs[i] = (k * threshold + num.limbs[i]) / denom;
+	k = (k * threshold + num.limbs[i]) - acc.limbs[i] * denom;
+    }
+    
+    if(dv != nullptr) {
+	while(acc.size() > 1) {
+	    if(acc.limbs.back() != 0) { break; }	
+	    acc.limbs.pop_back();
+	}
+    	*dv = acc;
+    }   
+    if(rem != nullptr) {
+	rem->limbs.clear();
+	rem->limbs.push_back(k);	
+	//*rem = k;
+    }
+}
+
 //There is no guarantee that this will work if dv, rem, or num share pointers.
 void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * rem) const {
+    
+    if(denom.size() == 1) {
+	BigInt::div(dv, num, denom.limbs[0], rem);
+	return;
+    }
+
     if(num == denom) {
 	if(rem != nullptr) {
 	    *rem = BigInt::ZERO;
@@ -803,6 +887,7 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
 	}
 	return;
     }
+
 
     BigInt acc = BigInt::ZERO;
     BigInt tmp = denom;
@@ -832,34 +917,73 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
 	} else {
 	    qhat = ((a.limbs[a.size() -1 - j] << bits) | a.limbs[a.size() -2 - j]) / v_1; 
 	}
-	while(tmp.limbs[tmp.size() -2] * qhat > ((a.limbs[a.size() -1 - j] + a.limbs[a.size() -2 -j] - qhat * v_1) * threshold + 
-						  a.limbs[a.size() -3 - j])) {
-	    --qhat;
+	if(tmp.size() >= 2 && a.size() >= 3) {
+	    while(tmp.limbs[tmp.size() -2] * qhat > 
+		((((a.limbs[a.size() -1 - j] << bits) | a.limbs[a.size() -2 -j]) - qhat * v_1) << bits) +  a.limbs[a.size() -3 - j]) {
+		--qhat;
+	    }
 	}
+	
+   
+	size_t first = -1 -j -tmp.size();
+	
 	//mult and sub
-	BigInt uprime = a.getLimbsRange(a.size()-1-j-tmp.size(), a.size()-j);
-	uprime -= tmp * qhat;
+	
+	//BigInt var = tmp;
+	//var *= qhat;
 
-	//The estimator was 1 too low, fix. Probably decreased in the while loop above
-	//When it wasn't supposed to be. For the moment this works, figure out the root 
-	//cause later as that shouldn't happen.
-	if(uprime > tmp) {
-	    ++qhat;
-	    uprime -= tmp;
+	//TODO:Figure out a way to remove this operator*
+	/*
+	BigInt var = std::move(tmp * qhat);
+
+	
+	//Inline subtraction so that we avoid creating copies of the bigint limbs
+	std::transform(var.limbs.begin(), var.limbs.end(), a.limbs.end() + first, a.limbs.end() + first, [](limb_t a, limb_t b) {
+	    return b - a;
+	});
+	*/
+	
+	limb_t carry = 0;
+	std::transform(tmp.limbs.begin(), tmp.limbs.end(), a.limbs.end() + first, a.limbs.end() + first, [&](limb_t a, limb_t b) {
+	    limb_t k  = a * qhat;
+	    k += carry;
+	    carry = k >> bits;
+	    k &= (threshold -1);
+	    return b - k;
+	});
+	if(carry) {
+	    a.limbs[a.size() - 1 -j] -= carry;
 	}
+	
+
+	for(auto it = a.limbs.end() + first; it < a.limbs.end() -1 - j; ++it) {
+	    //If the number underflowed
+	    if(*it > this->threshold) {
+		 *it += this->threshold;
+	         *(it+1) -= 1;
+	    }
+	 }
+
+	//If we need to carry from the top limb, "borrow" a carry and then subtract back.  
 	//Super special case, should happen about 2/threshold times
-	if(uprime < BigInt::ZERO) {
-	    //qhat was 1 too big causing uprime to be negative, decrement
+	if(a.limbs[a.size() -1 -j] > this->threshold) {
+	    a.limbs[a.size() -1 -j] += this->threshold;
+	    auto subtract = [&](limb_t a) {
+		return threshold -1 - a;
+	    };
+	    std::transform(a.limbs.end() + first, a.limbs.end() -j, a.limbs.end() + first, subtract);
+	    a.limbs[a.size() + first]++;
 	    --qhat;
-	    uprime += tmp;	
-	}	
-	//maintain number of digits
-	while(uprime.size() < tmp.size()+1) {
-	    uprime.limbs.push_back(0);
+	    std::transform(tmp.limbs.begin(), tmp.limbs.end(), a.limbs.end() + first, a.limbs.end() + first, std::minus<limb_t>());
+	    for(auto it = a.limbs.end() + first; it < a.limbs.end() -1 - j; ++it) {
+		//If the number underflowed
+		if(*it > this->threshold) {
+		     *it += this->threshold;
+		     *(it+1) -= 1;
+		}
+	     }
 	}
-	//Replace the values in *this with the "divided" values held in uprime
-	std::move(uprime.limbs.begin(), uprime.limbs.end(), a.limbs.end()-1-j-tmp.size());
-	//uprime should be at most 1 limb long after the subtraction (and without the readd stage)
+	
 	acc.limbs[m-j] = qhat;
 
 	++j;

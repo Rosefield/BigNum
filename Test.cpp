@@ -391,14 +391,18 @@ void testCompositeModExp() {
     //~512 bit semi-prime
     BigInt n(p * q);
 
-
+    BigInt c;
+    int trials = 1;
     start = std::chrono::system_clock::now();
-    BigInt c = m.pow(e, n);
+    for(int i = 0; i < trials; ++i) {
+	c = m.pow(e, n);
+    }
     end = std::chrono::system_clock::now();
     elapsed_time = end - start;
 #ifdef _PRINT_VALS
-    std::cout<< "testCompositeModExp1 took: " << elapsed_time.count() << " computing " << c << std::endl;
+    std::cout<< "n x testCompositeModExp1 took: " << elapsed_time.count() << " computing " << c << std::endl;
 #endif
+    std::cout<< "average time: " << elapsed_time.count() / trials << std::endl;
     BigInt actual("2964838268779463116114800686128261984992461004875135797684366739503797344419"
 		 "53324251806585497342796724135747651574033488424137969860812870453290786776434");
 
@@ -407,19 +411,24 @@ void testCompositeModExp() {
     BigInt d("61209282410124760555153387834751911935998153976979367427081753749948289104979274"
 	     "79612549027573377098818014420611341932265518557602531048137183493875578113");
 
+    BigInt m2;
     start = std::chrono::system_clock::now();
-    BigInt m2 = c.pow(d, n);
+    for(int i = 0; i < trials; ++i) {
+	m2 = c.pow(d, n);
+    }
     end = std::chrono::system_clock::now();
     elapsed_time = end - start;
 
 #ifdef _PRINT_VALS
-    std::cout<< "testCompositeModExp2 took: " << elapsed_time.count() << " computing " << m2 << std::endl;
+    std::cout<< "n x testCompositeModExp2 took: " << elapsed_time.count() << " computing " << m2 << std::endl;
 #endif
+    std::cout << "average time: " << elapsed_time.count() / trials << std::endl;
     std::cout << "512 RSA Decrypt Correct? " << (m2 == m) << std::endl; 
   
 }
 
 int main() {
+
 /*
     //Addition Tests
     test500Fib();
@@ -432,11 +441,11 @@ int main() {
 
 /*
     //Multiplication Tests
-    test20FactQuad();
-    test60Fact();
-    testLongStringConstructor();   
-    testVeryLongStringConstructor(); 
-   testMulRandom1024Bit();
+//    test20FactQuad();
+//    test60Fact();
+//    testLongStringConstructor();   
+//    testVeryLongStringConstructor(); 
+    testMulRandom1024Bit();
 /**/
 
 /*
@@ -449,17 +458,19 @@ int main() {
 
 /*
     //Division Tests
-    testDivRand512Bit();    
+    testDivRand512Bit();       
     test3Pow512Div2Pow512();
     testDivAddBack();
  
     testRemainderlessMod();
-    testLongToDecimal();
-    testVeryLongToDecimal();
+//    testLongToDecimal();
+//    testVeryLongToDecimal();
 /**/
 
+
     //Modexp Tests
-    testSmallModExp();
+ //   testSmallModExp();
     testCompositeModExp();
+/**/
 }
 
