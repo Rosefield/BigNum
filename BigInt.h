@@ -74,7 +74,7 @@ class BigInt {
 	bool negative;
     
     private:
-	limb_t threshold;    
+	limb_t base;    
 	void CtorHelper(limb_t ull);
 	void reallign();
 	limb_t getBits(limb_t lt, int bits);
@@ -159,8 +159,8 @@ std::string BigInt::ToDecimal() const {
     return ret;
 }
 
-//The value that bits is set to should be used for both bits and for the shift in threshold
-BigInt::BigInt(): limbs(), bits(31), negative(false), threshold(static_cast<unsigned int>(1 << 31)) {
+//The value that bits is set to should be used for both bits and for the shift in base
+BigInt::BigInt(): limbs(), bits(31), negative(false), base(static_cast<unsigned int>(1 << 31)) {
     limbs.reserve(5);
 }
 
@@ -234,11 +234,11 @@ void BigInt::CtorHelper(limb_t ull) {
 
 }*/
 
-BigInt::BigInt(const BigInt& b): limbs(b.limbs), bits(b.bits), negative(b.negative), threshold(b.threshold) {
+BigInt::BigInt(const BigInt& b): limbs(b.limbs), bits(b.bits), negative(b.negative), base(b.base) {
  //   std::cout << "Copy constructor!" << std::endl;
 }
 
-BigInt::BigInt(BigInt&& rhs): limbs(std::move(rhs.limbs)), bits(std::move(rhs.bits)), negative(std::move(rhs.negative)), threshold(std::move(rhs.threshold)) {
+BigInt::BigInt(BigInt&& rhs): limbs(std::move(rhs.limbs)), bits(std::move(rhs.bits)), negative(std::move(rhs.negative)), base(std::move(rhs.base)) {
 }
 
 inline size_t BigInt::size() const{
@@ -251,25 +251,38 @@ void BigInt::reallign() {
     //the additional +1 is due to the possibility of overflow in the individual limbs 
     limb_t carry = 0;
 
-    for(int i = 0; i < this->size(); i++) {
+    for(int i = 0; i < this->size() -1; i++) {
 	/* do something here to ensure that each limb only contains at most $bits bits
 	    Need to consider that each limb can possibly have leading 0 bits, and that
 	    those need to be propogated 
 	*/
-	if(i + 1 == this->size()) {
-	    if(limbs[i] == 0 && carry == 0 && limbs.size() > 1) {
-		limbs.pop_back();
-		while(limbs.size() > 1 && limbs.back() == 0) {
-		    limbs.pop_back();
-		}
-		break;
-	    }
+	    
+	if(carry == 0) { continue; }
+	limb_t tmp = limbs[i] + carry;
+	if(tmp < limbs[i]) {
+	    std::cout << "Overflow mid!" << std::endl;
+	    //deal with overflow
+	    limbs[i] = getBits(tmp, bits);
+	    tmp >>= bits;
+	    //set the 64 - bits + 1 bit 
+	    tmp |= 1 << (64 - bits);
+	    carry = tmp;
+	} else if(tmp >= base) { 
+	    limbs[i] = getBits(tmp, bits);
+	    tmp >>= bits;
+	    carry = tmp;
+	} else {
+	    limbs[i] = tmp;
+	}	    
 
-	    limb_t tmp = limbs[i] + carry;
+    } 
+
+    if(carry) {
+	    limb_t tmp = limbs.back() + carry;
 	    if(tmp < carry) {
 		std::cout << "Overflow end!" << std::endl;		
 		//deal with overflow
-		limbs[i] = getBits(tmp, bits);
+		limbs.back() = getBits(tmp, bits);
 		tmp >>= bits;
 		//set the 64 - bits + 1 bit 
 		tmp |= 1 << (64 - bits);
@@ -278,39 +291,22 @@ void BigInt::reallign() {
 		    tmp >>= bits;
 		}
 
-	    } else if (tmp >= threshold) {
-		limbs[i] = getBits(tmp, bits);
+	    } else if (tmp >= base) {
+		limbs.back() = getBits(tmp, bits);
 		tmp >>= bits;
 		while(tmp) {
 		    limbs.push_back(getBits(tmp, bits));
 		    tmp >>= bits;
-		    i += 1;
 		}
 	    } else {
-		limbs[i] = tmp;
+		limbs.back() = tmp;
 	    }
-	    
-	} else {
-	    if(carry == 0) { continue; }
-	    limb_t tmp = limbs[i] + carry;
-	    if(tmp < limbs[i]) {
-		std::cout << "Overflow mid!" << std::endl;
-		//deal with overflow
-		limbs[i] = getBits(tmp, bits);
-		tmp >>= bits;
-		//set the 64 - bits + 1 bit 
-		tmp |= 1 << (64 - bits);
-		carry = tmp;
-	    } else if(tmp >= threshold) { 
-		limbs[i] = getBits(tmp, bits);
-		tmp >>= bits;
-		carry = tmp;
-	    } else {
-		limbs[i] = tmp;
-	    }	    
-	}
-
-    }   
+    } else {
+	while(limbs.size() > 1) {
+	    if(limbs.back() != 0) { break; }
+	    limbs.pop_back();
+	}    
+    }
 }
 
 limb_t BigInt::getBits(limb_t lt, int bits) {
@@ -408,8 +404,12 @@ BigInt BigInt::pow(BigInt& exp, BigInt& mod) const {
 	//find inverse, if it exists, and I feel motivated to implement it
     } else {
 	BigInt base(*this);
-	if(Log2(exp) >= 520) {
-	    return modexp_sliding_window(base, exp, mod);
+	BigInt log = Log2(exp);
+	if(log >= 2048) {
+	    return modexp_sliding_window(base, exp, mod, 6);
+	} else if(log >= 512) {
+	    //Defaults to k=5, but be explicit here to show similarities to the above call
+	    return modexp_sliding_window(base, exp, mod, 5);
 	} else {
 	    return modexp_montgomery(base, exp, mod);
 	}
@@ -419,7 +419,66 @@ BigInt BigInt::pow(BigInt& exp, BigInt& mod) const {
 
 BigInt BigInt::modexp_sliding_window(BigInt& base, BigInt& exp, BigInt& mod, int k) const {
 
-    return BigInt::ZERO;
+    limb_t m = 1 << k;
+
+    //Temporarily use as static k
+    std::vector<BigInt> xs(m, BigInt::ZERO);
+
+    BigInt squared = (base * base) % mod;
+    xs[0] = base;
+    xs[0] %= mod;
+    for(int i = 1; i < m; ++i) {
+	xs[i] = xs[i-1] * squared;
+	xs[i] %= mod;
+    }
+
+    std::string bits = exp.ToBinary();
+
+    std::vector<std::string> windows;
+
+    auto window_it = bits.rbegin();
+    for(; window_it + k < bits.rend(); ) {
+	if(*window_it == '1') {
+	    std::string window(window_it, window_it + k);
+	    std::reverse(window.begin(), window.end());
+	    windows.push_back(window);
+	    window_it += k;
+	} else {
+	    int i = 0;
+	    while(*(window_it + i) == '0') {
+		++i;
+	    }
+	    windows.push_back(std::string(window_it, window_it + i));	    
+	    window_it += i;
+	}
+    }    
+    if(window_it < bits.rend()) {
+	std::string window(window_it, bits.rend());
+	window.resize(k, 0);
+	std::reverse(window.begin(), window.end());
+	windows.push_back(window);
+    }
+
+    BigInt result = BigInt::ONE;
+    
+    limb_t index = stoll(*(windows.rbegin()), nullptr,2);
+    if(index) {
+	result = xs[index/2];
+    }
+
+    for(auto it = windows.rbegin() + 1; it < windows.rend(); ++it) {
+	for(int i = 0; i < it->length(); ++i) {
+	    result *= result;
+	    result %= mod;
+	}
+
+	limb_t index = stoll(*it, nullptr, 2);
+	if(index) {
+	    result *= xs[index/2];	
+	}
+    }
+
+    return result;
 }
 
 BigInt BigInt::modexp_montgomery(BigInt& base, BigInt& exp, BigInt& mod) const {
@@ -431,7 +490,6 @@ BigInt BigInt::modexp_montgomery(BigInt& base, BigInt& exp, BigInt& mod) const {
     size_t hi = bits.find_first_of('1');
     
     for(auto it = bits.begin() + hi +1; it < bits.end(); it++) {
-	//std::cout << "on bit num: " << it - (bits.begin() + hi + 1) << std::endl;
 	if(*it == '1') {
 	    t1 *= t2;
 	    t1 %= mod;
@@ -510,37 +568,26 @@ BigInt& BigInt::operator+=(const BigInt& rhs){
     }
 
     if(rhs.size() > this->size()) this->limbs.resize(rhs.size(), 0);
-    limb_t carry = 0;
-    for(int i = 0; i < rhs.size(); i++){
-	this->limbs[i] += rhs.limbs[i] + carry;
-	
-	if(this->limbs[i] >= threshold) {
-	    carry = (this->limbs[i] >> bits);
-	    this->limbs[i] = getBits(this->limbs[i], bits);
-	} else {
-	    carry = 0;
-	}
-    }
-      
-    if (carry){
-	for(int i = rhs.size(); i < this->size(); ++i) {
-	    if(carry == 0) {break;}	
-	    limbs[i] += carry;
-	    if(limbs[i] >= threshold) {
-		carry = this->limbs[i] >> bits;
-		this->limbs[i] = getBits(this->limbs[i], bits);
-	     } else {
-		carry = 0;
-	    }
-	}
-	if(carry) {
-	    this->limbs.push_back(carry);
-	}
-    }
-  
+    
+    //Is it faster to have the carry and add separate, or would it be better to keep them together?
 
+    //add all of the limbs together
+    std::transform(rhs.limbs.begin(), rhs.limbs.end(), this->limbs.begin(), this->limbs.begin(), std::plus<limb_t>());
 
-    //this->reallign();
+    //If the two limbs added together "overflow" by exceeding the base, then we have a carry value of 1
+    //This cannot be greater than 1 as (2^31 -1)*2 = 2^32 -2 < 2^32 -1; and we are taking the 32nd bit.
+    for(auto it = this->limbs.begin(); it < this->limbs.end() -1; ++it) {
+	if(*it >= base) {
+	    *it &= (base -1);	
+	    *(it +1) += 1;
+	}    
+    }
+
+    //If we overflowed the final limb, correct it and add a new limb
+    if(this->limbs.back() >= base) {
+	this->limbs.back() &= (base -1);
+	this->limbs.push_back(1);	
+    }
 
     return *this;
 }
@@ -564,18 +611,18 @@ BigInt& BigInt::operator-=(const BigInt& rhs){
     //Carry
     for(auto it = this->limbs.begin(); it < this->limbs.end() -1; ++it) {
 	//If the number underflowed
-	if(*it > this->threshold) {
-	    *it += this->threshold;
+	if(*it > this->base) {
+	    *it += this->base;
 	    *(it+1) -= 1;
 	}
     }
 
     //If we need to carry from the top limb, "borrow" a carry and then subtract back.  
-    if(this->limbs.back() > this->threshold) {
-	this->limbs.back() += this->threshold;
+    if(this->limbs.back() > this->base) {
+	this->limbs.back() += this->base;
 	this->negative = !this->negative;
 	auto subtract = [this](limb_t a) {
-	    return this->threshold -1 - a;
+	    return this->base -1 - a;
 	};
 	std::transform(this->limbs.begin(), this->limbs.end(), this->limbs.begin(), subtract);
 	this->limbs[0]++;
@@ -589,7 +636,7 @@ BigInt& BigInt::operator-=(const BigInt& rhs){
 BigInt& BigInt::operator*=(const BigInt& rhs){
   
   bool neg = this->negative != rhs.negative;
-    if(this->size() < 10 || rhs.size() < 10 || this->size() + rhs.size() < 30) {
+    if(this->size() < 20 || rhs.size() < 20 || this->size() + rhs.size() < 70) {
 	*this = std::move(naiveMul(*this, rhs));
     } else {
     	*this = std::move(karatsuba(*this, rhs));
@@ -607,17 +654,24 @@ BigInt& BigInt::operator*=(const limb_t& rhs) {
 	return *this;
     }
 
+    
+
+    //Separate from the carry step to better vectorize the code, or would it be faster together?
+    for(auto it = this->limbs.begin(); it < this->limbs.end(); ++it) {
+	*it *= rhs;
+    }
+
     limb_t carry = 0;
-    for(int i = 0; i < this->size(); i++) {
-	this->limbs[i] = this->limbs[i] * rhs;
-	this->limbs[i] += carry;
-	carry = this->limbs[i] >> bits;
-	this->limbs[i] &= (threshold -1);
+    for(auto it = this->limbs.begin(); it < this->limbs.end(); ++it) {
+	*it += carry;
+	carry = *it >> bits;
+	*it &= (base -1);
     }
     if(carry) {
 	this->limbs.push_back(carry);
-    }  
-    return *this;
+    }
+ 
+   return *this;
 }
 
 /**
@@ -626,7 +680,7 @@ BigInt& BigInt::operator*=(const limb_t& rhs) {
 * is of the form z_2*B^(2m) + z_1*B^m + z_0 
 */
 BigInt BigInt::karatsuba(const BigInt& n1, const BigInt& n2) {
-    if(n1.size() < 10 || n2.size() < 10 || n1.size() + n2.size() < 30) {
+    if(n1.size() < 20 || n2.size() < 20 || n1.size() + n2.size() < 70) {
 	return naiveMul(n1, n2);
     }
 
@@ -676,78 +730,56 @@ BigInt BigInt::naiveMul(const BigInt& n1, const BigInt& n2) {
     BigInt tmp;
     int m = n1.size() + n2.size();
     tmp.limbs.resize(m, 0);
-    for(int i = 0; i < n1.size(); i++) {
+
+    for(int j = 0; j < n2.size(); ++j) {
+	tmp.limbs[j] = n1.limbs[0] * n2.limbs[j];
+    }
+
+    tmp.limbs[1] += tmp.limbs[0] >> bits;
+    tmp.limbs[0] &= (base -1);
+
+
+    //As each limb is only 31 bits long we can add up to 4 multiplications and a carry without a 64bit int overflowing
+    for(int i = 1; i < n1.size(); i++) {
 	limb_t carry = 0;
 	for(int j = 0; j < n2.size(); j++) {
-	    tmp.limbs[i+j] += n1.limbs[i] * n2.limbs[j] + carry;
-	    carry = tmp.limbs[i+j] >> bits;
-	    tmp.limbs[i+j] &= (threshold -1);
+	    tmp.limbs[i+j] += n1.limbs[i] * n2.limbs[j];
 	}
-	tmp.limbs[i + n2.size()] = carry;
+	tmp.limbs[i + 1] += tmp.limbs[i] >> bits;
+	tmp.limbs[i] &= (base -1);
+	if(i % 4 == 3) {
+	    for(auto it = tmp.limbs.begin() + i + 1; it < tmp.limbs.begin() + i + 1 + n2.size(); ++it) {
+		*(it + 1) += *it >> bits;
+		*it &= (base - 1);		    	    
+	    }	
+
+	}    
     }
- 
-    for(int i = tmp.size() -1; i > 0; --i) {
-	if(tmp.limbs[i] != 0) { break; }
+    for(auto it = tmp.limbs.end() - n2.size(); it < tmp.limbs.end() -1; ++it) {
+	*(it +1) += *it >> bits;
+	*it &= (base -1);
+    }
+       
+
+    while(tmp.size() > 1){
+	if(tmp.limbs.back() != 0) { break; }
 	tmp.limbs.pop_back();
     }
     return tmp;
-}
-
-BigInt BigInt::naiveMul(const BigInt& n1, const limb_t& n2) {
-    if(n1 == BigInt::ZERO || n2 == 0) {
-	return BigInt::ZERO;
-    }
-
-    /*
-    limb_t carry = 0;
-    for(int i = 0; i < this->size(); i++) {
-	this->limbs[i] = this->limbs[i] * n2;
-	this->limbs[i] += carry;
-	carry = this->limbs[i] >> bits;
-	this->limbs[i] &= (threshold -1);
-    }
-    if(carry) {
-	this->limbs.push_back(carry);
-    }    
-    while(this->size() > 1) {
-	if(this->limbs.back() != 0) { break; }
-	this->limbs.pop_back();
-    }
-    */
-
-    BigInt tmp;
-    tmp.limbs.resize(n1.size() +1, 0);
-    for(int i = 0; i < n1.size(); i++) {
-	tmp.limbs[i] += n1.limbs[i] * n2;
-	limb_t carry = tmp.limbs[i] >> bits;
-	tmp.limbs[i] &= (threshold -1);
-	tmp.limbs[i + 1] = carry;
-    }
- 
-    for(int i = tmp.size() -1; i > 0; --i) {
-	if(tmp.limbs[i] != 0) { break; }
-	tmp.limbs.pop_back();
-    }
-    return tmp;
-
 }
 
 //Returns only the high limb (limbs[size() -1) in the BigInt
 BigInt BigInt::highLimb() const{
     BigInt tmp;
-    std::vector<limb_t> vt;
-    vt.push_back(this->limbs[this->size()-1]);
-    tmp.limbs = std::move(vt);
+    tmp.limbs.push_back(this->limbs.back());
     return tmp;
 }
 
 BigInt BigInt::highNLimbs(int n) const {
     if(n > this->size()) return *this;
+    
     BigInt tmp;
-
-    std::vector<limb_t> vt;
-    vt.insert(vt.begin(), this->limbs.end() - n, this->limbs.end());
-    tmp.limbs = std::move(vt);
+    tmp.limbs.insert(tmp.limbs.begin(), this->limbs.end() - n, this->limbs.end());
     return tmp;
 }
 
@@ -761,20 +793,16 @@ BigInt BigInt::lowerLimbs() const{
 
 BigInt BigInt::lowerNLimbs(int n) const {
     if(n > this->size()) return *this;
-    BigInt tmp;
 
-    std::vector<limb_t> vt;
-    vt.insert(vt.begin(), this->limbs.begin(), this->limbs.begin() + n);
-    tmp.limbs = std::move(vt);
+    BigInt tmp;
+    tmp.limbs.insert(tmp.limbs.begin(), this->limbs.begin(), this->limbs.begin() + n);
     return tmp;
 }
 
-
+//Trust that the user supplied good data
 BigInt BigInt::getLimbsRange(int start, int end) const {
     BigInt tmp;
-    std::vector<limb_t> vt;
-    vt.insert(vt.begin(),this->limbs.begin() + start, this->limbs.begin() + end);
-    tmp.limbs = std::move(vt);
+    tmp.limbs.insert(tmp.limbs.begin(), this->limbs.begin() + start, this->limbs.begin() + end);
     return tmp;
 }
 
@@ -786,7 +814,7 @@ BigInt& BigInt::operator/=(const BigInt& rhs){
 
     BigInt::div(this, *this, rhs, nullptr);
 
-    this->reallign();
+    //this->reallign();
     return *this;
 }
 
@@ -812,7 +840,7 @@ BigInt& BigInt::operator%=(const BigInt& rhs){
     
     BigInt::div(nullptr, *this, rhs, this);
 
-    this->reallign();
+    //this->reallign();
     return *this;
 }
 
@@ -843,8 +871,8 @@ void BigInt::div(BigInt * dv, const BigInt& num, const limb_t& denom, BigInt * r
 
     limb_t k = 0;
     for(int i = num.size() -1; i >= 0; --i) {
-	acc.limbs[i] = (k * threshold + num.limbs[i]) / denom;
-	k = (k * threshold + num.limbs[i]) - acc.limbs[i] * denom;
+	acc.limbs[i] = (k * base + num.limbs[i]) / denom;
+	k = (k * base + num.limbs[i]) - acc.limbs[i] * denom;
     }
     
     if(dv != nullptr) {
@@ -894,7 +922,7 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
     BigInt a = num;
     limb_t qhat, v_1, d;
     v_1 = tmp.limbs[denom.size() -1];
-    d = (threshold / (v_1 + 1));
+    d = (base / (v_1 + 1));
     //Normalize
     if(d == 1) {
 	a.limbs.push_back(0);
@@ -902,6 +930,10 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
 	a *= d;
 	tmp *= d;
     }
+    if(a.size() == tmp.size()) {
+	a.limbs.push_back(0);
+    }
+
     v_1 = tmp.limbs[denom.size()-1];	
 
     int j = 0;
@@ -913,7 +945,7 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
     do {
 	//Calculate qhat
 	if(a.limbs[a.size() -1 -j] == v_1) {
-	    qhat = threshold -1;
+	    qhat = base -1;
 	} else {
 	    qhat = ((a.limbs[a.size() -1 - j] << bits) | a.limbs[a.size() -2 - j]) / v_1; 
 	}
@@ -927,28 +959,14 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
    
 	size_t first = -1 -j -tmp.size();
 	
-	//mult and sub
-	
-	//BigInt var = tmp;
-	//var *= qhat;
-
-	//TODO:Figure out a way to remove this operator*
-	/*
-	BigInt var = std::move(tmp * qhat);
-
-	
-	//Inline subtraction so that we avoid creating copies of the bigint limbs
-	std::transform(var.limbs.begin(), var.limbs.end(), a.limbs.end() + first, a.limbs.end() + first, [](limb_t a, limb_t b) {
-	    return b - a;
-	});
-	*/
-	
+	//mult and sub. inlined to avoid making a copy of the limbs
+	//Equivalent to uprime -= tmp * qhat;
 	limb_t carry = 0;
 	std::transform(tmp.limbs.begin(), tmp.limbs.end(), a.limbs.end() + first, a.limbs.end() + first, [&](limb_t a, limb_t b) {
 	    limb_t k  = a * qhat;
 	    k += carry;
 	    carry = k >> bits;
-	    k &= (threshold -1);
+	    k &= (base -1);
 	    return b - k;
 	});
 	if(carry) {
@@ -958,27 +976,30 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
 
 	for(auto it = a.limbs.end() + first; it < a.limbs.end() -1 - j; ++it) {
 	    //If the number underflowed
-	    if(*it > this->threshold) {
-		 *it += this->threshold;
+	    if(*it >= this->base) {
+		 *it += this->base;
 	         *(it+1) -= 1;
 	    }
 	 }
 
 	//If we need to carry from the top limb, "borrow" a carry and then subtract back.  
-	//Super special case, should happen about 2/threshold times
-	if(a.limbs[a.size() -1 -j] > this->threshold) {
-	    a.limbs[a.size() -1 -j] += this->threshold;
+	//Super special case, should happen about 2/base times
+	if(a.limbs[a.size() -1 -j] > this->base) {
+	    a.limbs[a.size() -1 -j] += this->base;
 	    auto subtract = [&](limb_t a) {
-		return threshold -1 - a;
+		return base -1 - a;
 	    };
+	    //Make a the negative (2^(bits * n) compliment) of itself
 	    std::transform(a.limbs.end() + first, a.limbs.end() -j, a.limbs.end() + first, subtract);
 	    a.limbs[a.size() + first]++;
 	    --qhat;
+	    
+	    //As a is now negative, a + b -> b - a
 	    std::transform(tmp.limbs.begin(), tmp.limbs.end(), a.limbs.end() + first, a.limbs.end() + first, std::minus<limb_t>());
 	    for(auto it = a.limbs.end() + first; it < a.limbs.end() -1 - j; ++it) {
 		//If the number underflowed
-		if(*it > this->threshold) {
-		     *it += this->threshold;
+		if(*it > this->base) {
+		     *it += this->base;
 		     *(it+1) -= 1;
 		}
 	     }
@@ -1005,7 +1026,7 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
 	if(d == 1) {
 	    *rem = std::move(a);
 	} else {
-	    a /= d;
+	    BigInt::div(&a, a, d, nullptr);
 	    *rem = std::move(a);
 	}		
     }
