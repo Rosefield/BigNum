@@ -20,7 +20,6 @@ BigInt Factorial(int n) {
     result.limbs.reserve(200000);
 
     for(limb_t i = 2; i <= n; ++i) {
-	std::cout << "i: " << i << std::endl;
 	result *= i;
     }
     
@@ -489,10 +488,10 @@ int main() {
     testVeryLongToDecimal();
 /**/
 
-/*
+
     //Modexp Tests
-    testSmallModExp();
-*/    test512ModExp();
+//    testSmallModExp();
+//    test512ModExp();
     test4kModExp();
 /**/
 
