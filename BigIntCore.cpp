@@ -269,21 +269,26 @@ BigInt& BigInt::operator+=(const BigInt& rhs){
     //Is it faster to have the carry and add separate, or would it be better to keep them together?
 
     //add all of the limbs together
-    std::transform(rhs.limbs.begin(), rhs.limbs.end(), this->limbs.begin(), this->limbs.begin(), std::plus<limb_t>());
-
-    //If the two limbs added together "overflow" by exceeding the base, then we have a carry value of 1
-    //This cannot be greater than 1 as (2^31 -1)*2 = 2^32 -2 < 2^32 -1; and we are taking the 32nd bit.
-    for(auto it = this->limbs.begin(); it < this->limbs.end() -1; ++it) {
-	if(*it >= base) {
-	    *it &= (base -1);	
-	    *(it +1) += 1;
-	}    
+    limb_t carry = 0;
+    std::transform(rhs.limbs.begin(), rhs.limbs.end(), this->limbs.begin(), this->limbs.begin(), 
+	//Inline carry and addition
+	[&](limb_t a, limb_t b) {
+	    a += b;
+	    a += carry;
+	    carry = a >> bits;;
+	    a -= this->base * carry;
+	    return a;
+	});
+    //have to have an extra case for if we still have a carry leftover after the initial add
+    for(int i = rhs.size(); i < this->size(); ++i) {
+	    if(!carry) { break; }
+	    this->limbs[i] += carry;
+	    carry = this->limbs[i] >> bits;
+	    this->limbs[i] -= this->base * carry;
     }
-
     //If we overflowed the final limb, correct it and add a new limb
-    if(this->limbs.back() >= base) {
-	this->limbs.back() &= (base -1);
-	this->limbs.push_back(1);	
+    if(carry) {
+	this->limbs.push_back(carry);
     }
 
     return *this;
@@ -308,10 +313,13 @@ BigInt& BigInt::operator-=(const BigInt& rhs){
     //Carry
     for(auto it = this->limbs.begin(); it < this->limbs.end() -1; ++it) {
 	//If the number underflowed
-	if(*it > this->base) {
-	    *it += this->base;
-	    *(it+1) -= 1;
-	}
+	//Trading (roughly) 1 memory write for 1 branch compared to 
+	//if(*it >= this->base) { ... }
+	//Given caching and the penalty for branch mispredict this seems to be more efficient
+	int i = *it >= this->base;
+	*it += this->base * i;
+	*(it+1) -= i;
+	
     }
 
     //If we need to carry from the top limb, "borrow" a carry and then subtract back.  
@@ -351,19 +359,14 @@ BigInt& BigInt::operator*=(const limb_t& rhs) {
 	return *this;
     }
 
-    
-
-    //Separate from the carry step to better vectorize the code, or would it be faster together?
-    for(auto it = this->limbs.begin(); it < this->limbs.end(); ++it) {
-	*it *= rhs;
-    }
-
     limb_t carry = 0;
     for(auto it = this->limbs.begin(); it < this->limbs.end(); ++it) {
+	*it *= rhs;
 	*it += carry;
 	carry = *it >> bits;
 	*it &= (base -1);
     }
+
     if(carry) {
 	this->limbs.push_back(carry);
     }
@@ -413,16 +416,14 @@ BigInt BigInt::operator-() const{
     return tmp;
 }
 
-//Make comparison operator a constant time operation? Useful for crypto focus, otherwise the speed
-//loss isn't really justified
+//Who needs constant-time operators anyways?
 bool BigInt::operator==(const BigInt& rhs) const{
     if(this->size() != rhs.size()) return false;
-    bool result = true;
     for(int i = this->size() -1; i >= 0; i--) {
-	if (this->limbs[i] != rhs.limbs[i]) result = false;	
+	if (this->limbs[i] != rhs.limbs[i]) return false;	
     }
 
-    return result;
+    return true;
 }
 
 bool BigInt::operator!=(const BigInt& rhs) const{
@@ -634,10 +635,16 @@ BigInt BigInt::naiveMul(const BigInt& n1, const BigInt& n2) {
     tmp.limbs[1] += tmp.limbs[0] >> bits;
     tmp.limbs[0] &= (base -1);
 
-
-    //As each limb is only 31 bits long we can add up to 4 multiplications and a carry without a 64bit int overflowing
+    /**
+    * As each limb is only 31 bits long we can add up to 4 multiplications and a carry without a 64bit int overflowing
+    * Unrolling loops, because I might as well find out if it is productive
+    * Taken from running valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes ./Test
+    *		ir	 dr	    dw	     bc		bcm
+    *normal	578m	110m	    60m	    34m		.9m
+    *unrolled	404m	128.5m	    75.8m   36.9m	2.2m
+    * Clearly the compiler is magic
+    */
     for(int i = 1; i < n1.size(); i++) {
-	limb_t carry = 0;
 	for(int j = 0; j < n2.size(); j++) {
 	    tmp.limbs[i+j] += n1.limbs[i] * n2.limbs[j];
 	}
@@ -650,7 +657,58 @@ BigInt BigInt::naiveMul(const BigInt& n1, const BigInt& n2) {
 	    }	
 
 	}    
+    } 
+    /*
+    int i = 1;
+    for(; i + 4 < n1.size(); ++i) {
+	for(int j = 0; j < n2.size(); j++) {
+	    tmp.limbs[i+j] += n1.limbs[i] * n2.limbs[j];
+	}
+	tmp.limbs[i + 1] += tmp.limbs[i] >> bits;
+	tmp.limbs[i] &= (base -1);
+	++i;
+
+	for(int j = 0; j < n2.size(); j++) {
+	    tmp.limbs[i+j] += n1.limbs[i] * n2.limbs[j];
+	}
+	tmp.limbs[i + 1] += tmp.limbs[i] >> bits;
+	tmp.limbs[i] &= (base -1);
+	++i;
+
+	for(int j = 0; j < n2.size(); j++) {
+	    tmp.limbs[i+j] += n1.limbs[i] * n2.limbs[j];
+	}
+	tmp.limbs[i + 1] += tmp.limbs[i] >> bits;
+	tmp.limbs[i] &= (base -1);
+	
+	//carry after every 4 mult-adds
+	for(auto it = tmp.limbs.begin() + i + 1; it < tmp.limbs.begin() + i + n2.size(); ++it) {
+	    *(it + 1) += *it >> bits;
+	    *it &= (base - 1);		    	    
+	}	
+	++i;
+
+	for(int j = 0; j < n2.size(); j++) {
+	    tmp.limbs[i+j] += n1.limbs[i] * n2.limbs[j];
+	}
+	tmp.limbs[i + 1] += tmp.limbs[i] >> bits;
+	tmp.limbs[i] &= (base -1);
     }
+
+    for(; i < n1.size(); ++i) {
+	for(int j = 0; j < n2.size(); j++) {
+	    tmp.limbs[i+j] += n1.limbs[i] * n2.limbs[j];
+	}
+	tmp.limbs[i + 1] += tmp.limbs[i] >> bits;
+	tmp.limbs[i] &= (base -1);
+	if(i % 4 == 3) {
+	    for(auto it = tmp.limbs.begin() + i + 1; it < tmp.limbs.begin() + i + n2.size(); ++it) {
+		*(it + 1) += *it >> bits;
+		*it &= (base - 1);		    	    
+	    }
+	}
+    }
+    */
 
     for(auto it = tmp.limbs.end() - n2.size(); it < tmp.limbs.end() -1; ++it) {
 	*(it +1) += *it >> bits;
@@ -756,32 +814,13 @@ void BigInt::div(BigInt * dv, const BigInt& num, const limb_t& denom, BigInt * r
 }
 
 //There is no guarantee that this will work if dv, rem, or num share pointers.
+//This function assumes that basic checks have already occurred: if num / denom, num = denom, etc
 void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * rem) const {
     
     if(denom.size() == 1) {
 	BigInt::div(dv, num, denom.limbs[0], rem);
 	return;
     }
-
-    if(num == denom) {
-	if(rem != nullptr) {
-	    *rem = BigInt::ZERO;
-	}
-	if(dv != nullptr) {
-	    *dv = BigInt::ONE;
-	}
-	return;
-    }
-    if(num < denom) {
-	if(rem != nullptr) {
-	    *rem = num;
-	}
-	if(dv != nullptr) {
-	    *dv = BigInt::ZERO;
-	}
-	return;
-    }
-
 
     BigInt acc = BigInt::ZERO;
     BigInt tmp = denom;
@@ -815,12 +854,15 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
 	} else {
 	    qhat = ((a.limbs[a.size() -1 - j] << bits) | a.limbs[a.size() -2 - j]) / v_1; 
 	}
-	if(tmp.size() >= 2 && a.size() >= 3) {
+	//This check calculates if the second digit of the division will be too small for the multiplication and thus
+	//will underflow. With this check qhat is either correct, or 1 too large, and is accounted for in the add-back
+	//stage below
+	//if(a.size() >= 3) {
 	    while(tmp.limbs[tmp.size() -2] * qhat > 
 		((((a.limbs[a.size() -1 - j] << bits) | a.limbs[a.size() -2 -j]) - qhat * v_1) << bits) +  a.limbs[a.size() -3 - j]) {
 		--qhat;
 	    }
-	}
+	//}
 	
    
 	size_t first = -1 -j -tmp.size();
@@ -828,29 +870,33 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
 	//mult and sub. inlined to avoid making a copy of the limbs
 	//Equivalent to uprime -= tmp * qhat;
 	limb_t carry = 0;
-	std::transform(tmp.limbs.begin(), tmp.limbs.end(), a.limbs.end() + first, a.limbs.end() + first, [&](limb_t a, limb_t b) {
-	    limb_t k  = a * qhat;
-	    k += carry;
-	    carry = k >> bits;
-	    k &= (base -1);
-	    return b - k;
-	});
-	if(carry) {
-	    a.limbs[a.size() - 1 -j] -= carry;
-	}
+	std::transform(tmp.limbs.begin(), tmp.limbs.end(), a.limbs.end() + first, a.limbs.end() + first, 
+	    //This lambda calculates with carries for subtraction and multiplication b -= a * qhat
+	    [&](limb_t a, limb_t b) {
+		limb_t k  = a * qhat;
+		k += carry;
+		carry = k >> bits;
+		k &= (base -1);
+		int i = k > b;
+		k -= this->base * i;
+		carry += i;
+		return b - k;
+	    });
+	a.limbs[a.size() - 1 -j] -= carry;
 	
-
+/*
 	for(auto it = a.limbs.end() + first; it < a.limbs.end() -1 - j; ++it) {
 	    //If the number underflowed
-	    if(*it >= this->base) {
-		 *it += this->base;
-	         *(it+1) -= 1;
-	    }
+	    //The same as if(*it >= this->base) { ... }, but removes the branching
+	    int i = *it >= this->base;
+	     *it += this->base * i;
+	     *(it+1) -= i;
 	 }
+*/
 
 	//If we need to carry from the top limb, "borrow" a carry and then subtract back.  
-	//Super special case, should happen about 2/base times
-	if(a.limbs[a.size() -1 -j] > this->base) {
+	//Super special add-back case, should happen about 2/base times
+	if(a.limbs[a.size() -1 -j] >= this->base) {
 	    a.limbs[a.size() -1 -j] += this->base;
 	    auto subtract = [&](limb_t a) {
 		return base -1 - a;
@@ -861,13 +907,15 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
 	    --qhat;
 	    
 	    //As a is now negative, a + b -> b - a
-	    std::transform(tmp.limbs.begin(), tmp.limbs.end(), a.limbs.end() + first, a.limbs.end() + first, std::minus<limb_t>());
+	    std::transform(tmp.limbs.begin(), tmp.limbs.end(), a.limbs.end() + first, a.limbs.end() + first
+		, std::minus<limb_t>());
 	    for(auto it = a.limbs.end() + first; it < a.limbs.end() -1 - j; ++it) {
 		//If the number underflowed
-		if(*it > this->base) {
-		     *it += this->base;
-		     *(it+1) -= 1;
-		}
+		int i = *it >= this->base;
+		//if(*it > this->base) {
+		     *it += this->base * i;
+		     *(it+1) -= i;
+		//}
 	     }
 	}
 	
@@ -888,10 +936,10 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
 	    a.limbs.pop_back();
 	}
 	//a.reallign();
-	if(a.size() > tmp.size() +1) {
+	/*if(a.size() > tmp.size() +1) {
 	    std::cout << "failure in division" << std::endl;
 	    a = a.getLimbsRange(0, tmp.size());
-	}	
+	}*/	
 
 	if(d == 1) {
 	    *rem = std::move(a);

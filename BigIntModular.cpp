@@ -1,35 +1,64 @@
 #include "BigInt.h"
 
 //TODO: Implement mod_add, mod_sub, mod_inv, mod_mul, mod_sqr
+//Should they be self assigning: i.e. mod_add : *this += add; *this %= mod instead of tmp = this; tmp += add; ...
+//Currently everything is very naive and is equivalent to just doing the operation followed by a
+//Modular reduction. This can all be improved in the future.
 
 BigInt BigInt::mod_add(BigInt& add, BigInt& mod) const {
-
-
-    return BigInt::ZERO;
+    BigInt tmp(*this);
+    tmp += add;
+    tmp %= mod;
+    return tmp;
 }
 
 BigInt BigInt::mod_sub(BigInt& sub, BigInt& mod) const { 
-
-
-    return BigInt::ZERO;
+    BigInt tmp(*this);
+    tmp -= sub;
+    tmp %= mod;
+    return tmp;
 }
-
 BigInt BigInt::mod_mul(BigInt& mul, BigInt& mod) const {
-
-
-    return BigInt::ZERO;
+    BigInt tmp(*this);
+    tmp *= mul;
+    tmp %= mod;
+    return tmp;
 }
 
+/*
+* Will return the modular inverse a^-1 of a mod m if gcd(a, m) == 1, otherwise will return BigInt::ZERO
+* Slightly modified version of the extended euclidean algorithm since we don't care what the multiplier
+* on the modulus is.
+*/
 BigInt BigInt::mod_inv(BigInt& mod) const { 
+    BigInt t = BigInt::ZERO, newt = BigInt::ONE;
+    BigInt r = mod, newr = *this;
 
+    while(newr != BigInt::ZERO) {
+	BigInt quotient = r / newr;
+	BigInt tmp = t;
+	t = newt;
+	newt = tmp - (quotient * newt);
 
-    return BigInt::ZERO;
+	tmp = r;
+	r = newr;
+	newr = (tmp - quotient * newr);	
+    }
+
+    if(r > BigInt::ONE) {
+	return BigInt::ZERO;
+    }
+    if(t < BigInt::ZERO) {
+	t += mod;
+    }
+    return t;
 }
 
 BigInt BigInt::mod_sqr(BigInt& mod) const { 
-
-
-    return BigInt::ZERO;
+    BigInt tmp(*this);
+    tmp *= tmp;
+    tmp %= mod;
+    return tmp;
 }
 
 
@@ -47,7 +76,7 @@ BigInt BigInt::pow(BigInt& exp, BigInt& mod) const {
 	    return modexp_sliding_window(base, exp, mod, 7);	
 	} else if(log >= 1024) {
 	    return modexp_sliding_window(base, exp, mod, 6);
-	} else if(log >= 512) {
+	} else if(log >= 384) {
 	    //Defaults to k=5, but be explicit here to show similarities to the above call
 	    return modexp_sliding_window(base, exp, mod, 5);
 	} else {
@@ -103,14 +132,7 @@ BigInt BigInt::modexp_sliding_window(BigInt& base, BigInt& exp, BigInt& mod, int
 	std::reverse(window.begin(), window.end());
 	windows.push_back(window);
     }
-/*
-    std::cout << "actual exponent: "<< std::endl << bits << std::endl;
 
-    for(auto it = windows.rbegin(); it < windows.rend(); ++it) {
-	std::cout << *it;
-    }
-    std::cout << std::endl;
-*/
     BigInt result = BigInt::ONE;
     
     limb_t index = stoll(*(windows.rbegin()), nullptr,2);
@@ -122,13 +144,12 @@ BigInt BigInt::modexp_sliding_window(BigInt& base, BigInt& exp, BigInt& mod, int
     //the top and work down
     for(auto it = windows.rbegin() + 1; it < windows.rend(); ++it) {
 	for(int i = 0; i < it->length(); ++i) {
-	    result *= result;
-	    result %= mod;
+	    result = result.mod_sqr(mod);
 	}
 
 	limb_t index = stoll(*it, nullptr, 2);
 	if(index) {
-	    result *= xs[index/2];	
+	    result = result.mod_mul(xs[index/2], mod);
 	}
     }
 
@@ -145,15 +166,11 @@ BigInt BigInt::modexp_montgomery(BigInt& base, BigInt& exp, BigInt& mod) const {
     
     for(auto it = bits.begin() + hi +1; it < bits.end(); it++) {
 	if(*it == '1') {
-	    t1 *= t2;
-	    t1 %= mod;
-	    t2 *= t2;
-	    t2 %= mod;
+	    t1 = t1.mod_mul(t2, mod);
+	    t2 = t2.mod_sqr(mod);
 	} else {
-	    t2 *= t1;
-	    t2 %= mod;
-	    t1 *= t1;
-	    t1 %= mod;
+	    t2 = t2.mod_mul(t1, mod);
+	    t1 = t1.mod_sqr(mod);
 	}
     }
     return t1;

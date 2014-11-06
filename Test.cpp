@@ -478,7 +478,7 @@ int main() {
 /**/
 
 /*
-    //Division Tests
+   //Division Tests
     testDivRand512Bit();       
     test3Pow512Div2Pow512();
     testDivAddBack();
@@ -490,8 +490,8 @@ int main() {
 
 
     //Modexp Tests
-//    testSmallModExp();
-//    test512ModExp();
+  //  testSmallModExp();
+    test512ModExp();
     test4kModExp();
 /**/
 
