@@ -72,6 +72,9 @@ class BigInt {
 	BigInt pow(BigInt exp) const;
 	BigInt abs(const BigInt&) const;
 
+	BigInt genRandomNum(const BigInt& low, const BigInt& high) const;
+	BigInt genProbabalisticPrime(const BigInt& low, const BigInt& high) const;
+	BigInt genPrime(const BigInt& low,  const BigInt& high) const;
 
 	BigInt mod_add(BigInt& add, BigInt& mod) const;
 	BigInt mod_sub(BigInt& sub, BigInt& mod) const;

@@ -576,8 +576,9 @@ BigInt BigInt::pow(BigInt exp) const {
 * where B is the radix of the system, in this case it is 2^(bits) -1. Therefore xy
 * is of the form z_2*B^(2m) + z_1*B^m + z_0 
 */
+//Currently horribly inefficient and it is more optimal to just use naiveMul even at 140 limbs
 BigInt BigInt::karatsuba(const BigInt& n1, const BigInt& n2) {
-    if(n1.size() < 20 || n2.size() < 20 || n1.size() + n2.size() < 70) {
+    if(n1.size() < 30 || n2.size() < 30 || n1.size() + n2.size() < 1000) {
 	return naiveMul(n1, n2);
     }
 
@@ -628,6 +629,40 @@ BigInt BigInt::naiveMul(const BigInt& n1, const BigInt& n2) {
     int m = n1.size() + n2.size();
     tmp.limbs.resize(m, 0);
 
+
+    if(n1 == n2) {
+	//HAC algorithm 14.16 for squaring
+	//http://cacr.uwaterloo.ca/hac/about/chap14.pdf
+	limb_t uv, c; //,u=0, v=0;
+	for(int i = 0; i < n1.size(); ++i) {
+	    uv = tmp.limbs[i+i] + n1.limbs[i] * n1.limbs[i];
+	    //u = uv >> bits;
+	    //v = uv & (base -1);
+	    c = uv >> bits;
+	    tmp.limbs[i+i] = uv & (base-1);
+	    for(int j = i+1; j< n1.size(); ++j) {
+	    	uv = tmp.limbs[i+j] + 2*n1.limbs[i]*n1.limbs[j] + c;
+		//u = uv >> bits;
+		//v = uv & (base -1);
+		tmp.limbs[i+j] = uv & (base -1);
+		c = uv >> bits;
+	    }
+
+	    tmp.limbs[i + n1.size()] = c;
+	}
+	while(tmp.size() > 1){
+	    if(tmp.limbs.back() != 0) { break; }
+	    tmp.limbs.pop_back();
+	}
+	
+	if(tmp.limbs.back() >= base) {
+	    c = tmp.limbs.back() >> bits;
+	    tmp.limbs.back() &= (base -1);
+	    tmp.limbs.push_back(c);
+	}
+	
+	return tmp;
+    } else {
     for(int j = 0; j < n2.size(); ++j) {
 	tmp.limbs[j] = n1.limbs[0] * n2.limbs[j];
     }
@@ -638,12 +673,16 @@ BigInt BigInt::naiveMul(const BigInt& n1, const BigInt& n2) {
     /**
     * As each limb is only 31 bits long we can add up to 4 multiplications and a carry without a 64bit int overflowing
     * Unrolling loops, because I might as well find out if it is productive
-    * Taken from running valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes ./Test
+    * Taken from running valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes ./Test using test4kModExp()
     *		ir	 dr	    dw	     bc		bcm
     *normal	578m	110m	    60m	    34m		.9m
     *unrolled	404m	128.5m	    75.8m   36.9m	2.2m
-    * Clearly the compiler is magic
+    * Clearly the compiler is magic, but it seems that the unrolled version is more efficient and running the multiplication
+    * in testMulRandom1024Bit() 100,000 times gives 
+    * normal   Avg time: 4.86*10^-6
+    * unrolled Avg time: 3.95*10^-6
     */
+    /*
     for(int i = 1; i < n1.size(); i++) {
 	for(int j = 0; j < n2.size(); j++) {
 	    tmp.limbs[i+j] += n1.limbs[i] * n2.limbs[j];
@@ -658,7 +697,7 @@ BigInt BigInt::naiveMul(const BigInt& n1, const BigInt& n2) {
 
 	}    
     } 
-    /*
+    */
     int i = 1;
     for(; i + 4 < n1.size(); ++i) {
 	for(int j = 0; j < n2.size(); j++) {
@@ -708,7 +747,7 @@ BigInt BigInt::naiveMul(const BigInt& n1, const BigInt& n2) {
 	    }
 	}
     }
-    */
+    }       
 
     for(auto it = tmp.limbs.end() - n2.size(); it < tmp.limbs.end() -1; ++it) {
 	*(it +1) += *it >> bits;
@@ -790,6 +829,45 @@ void BigInt::div(BigInt * dv, const BigInt& num, const limb_t& denom, BigInt * r
 	return;
     }
 
+    //If we require the result of the divison and not just the remainder, do it in place
+    //If sufficient memory is already allocated at dv this saves about 50% of memory accesses, 
+    //Otherwise, it is roughly equivalent (saves 0-0.5%) compared to creating additional memory
+    
+    if(dv != nullptr) {
+	dv->limbs.resize(num.size(),0);
+	limb_t k = 0;	
+	for(int i = num.size() -1; i >= 0; --i) {
+	    //Temporary limb in case dv is a pointer to num
+	    limb_t t = num.limbs[i];
+	    dv->limbs[i] = (k * base + t) / denom;
+	    k = (k * base + t) - dv->limbs[i] * denom;
+	}
+
+	while(dv->size() > 1) {
+	    if(dv->limbs.back() != 0) { break; }
+	    dv->limbs.pop_back();
+	}
+
+	if(rem != nullptr) {
+	    rem->limbs.clear();
+	    rem->limbs.push_back(k);	
+	    //*rem = k;
+	}
+	return;
+    }
+ 
+   if(rem != nullptr) {
+	limb_t k = 0;
+	for(int i = num.size() -1; i >= 0; --i) {
+	    k = (k * base + num.limbs[i]) % denom;
+	}
+	rem->limbs.clear();
+	rem->limbs.push_back(k);
+    }
+    
+
+
+    /*
     BigInt acc = BigInt::ZERO;
     acc.limbs.resize(num.size(), 0);
 
@@ -809,8 +887,8 @@ void BigInt::div(BigInt * dv, const BigInt& num, const limb_t& denom, BigInt * r
     if(rem != nullptr) {
 	rem->limbs.clear();
 	rem->limbs.push_back(k);	
-	//*rem = k;
     }
+    */   
 }
 
 //There is no guarantee that this will work if dv, rem, or num share pointers.
@@ -924,8 +1002,6 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
 	++j;
     } while (j <= m);
 
-    acc.negative = false;
-
     if(dv != nullptr) {
 	*dv = acc;
     }
@@ -935,17 +1011,51 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
 	    if(a.limbs.back() != 0) { break; }
 	    a.limbs.pop_back();
 	}
-	//a.reallign();
-	/*if(a.size() > tmp.size() +1) {
-	    std::cout << "failure in division" << std::endl;
-	    a = a.getLimbsRange(0, tmp.size());
-	}*/	
 
+	//The remainder is the de normalized value of a; rem = a / d
 	if(d == 1) {
 	    *rem = std::move(a);
 	} else {
-	    BigInt::div(&a, a, d, nullptr);
-	    *rem = std::move(a);
+	    BigInt::div(rem, a, d, nullptr);
 	}		
     }
 }
+
+/*
+BigInt BigInt::genRandomBits(const BigInt& bits) const {
+
+    return BigInt::ZERO;
+}
+
+BigInt BigInt::genRandomNum(const BigInt& high) const {
+
+
+    return BigInt::ZERO;
+}
+*/
+
+BigInt BigInt::genRandomNum(const BigInt& low, const BigInt& high) const {
+    //gen log2(high) random bits
+    //check that num < high
+    //check that num > low
+
+    return BigInt::ZERO;
+}
+
+
+BigInt BigInt::genProbabalisticPrime(const BigInt& low, const BigInt& high) const {
+    //Gen random number between low and high
+    //Check if number is divisible by small primes
+    //Run a few (~10) tests of Miller-Rabin
+    //If miller-rabin return prime, return number, else gen new random number and repeat
+
+
+    return BigInt::ZERO;
+}
+
+
+BigInt BigInt::genPrime(const BigInt& low,  const BigInt& high) const {
+
+    return BigInt::ZERO;
+}
+

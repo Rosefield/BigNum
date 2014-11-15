@@ -17,7 +17,7 @@ BigInt Fibonacci(int n) {
 BigInt Factorial(int n) {
     BigInt result(1);
 
-    result.limbs.reserve(200000);
+    result.limbs.reserve(10);
 
     for(limb_t i = 2; i <= n; ++i) {
 	result *= i;
@@ -146,11 +146,17 @@ void testMulRandom1024Bit() {
     std::chrono::duration<double> elapsed_time;
     start = std::chrono::system_clock::now();
     a *=  b;
+    
+    for(int i = 0; i < 100000; ++i) {
+	BigInt c = a * b;
+    }
+    
     end = std::chrono::system_clock::now();
     elapsed_time = end - start;
 #ifdef _PRINT_VALS
     std::cout<< "MulRandom1024Bit took: " << elapsed_time.count() << " computing " << a << std::endl;
 #endif
+    std::cout << "Avg time: " << elapsed_time.count() / 100000 << std::endl;
     std::vector<limb_t> actual{3,235270659,568911404,922708634,1696526154,1010925488,110054269,
                             1158468645,1442079807,1577453968,299033823,519200492,1286835655,
                             1419899891,1067667472,1499562046,108550203,1558147072,1198215629,
@@ -488,11 +494,11 @@ int main() {
     testVeryLongToDecimal();
 /**/
 
-
+/*
     //Modexp Tests
-  //  testSmallModExp();
+    testSmallModExp();
     test512ModExp();
-    test4kModExp();
+*/    test4kModExp();
 /**/
 
 

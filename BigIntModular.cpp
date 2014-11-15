@@ -98,41 +98,42 @@ BigInt BigInt::modexp_sliding_window(BigInt& base, BigInt& exp, BigInt& mod, int
     //Temporarily use as static k
     std::vector<BigInt> xs(m/2, BigInt::ZERO);
 
-    BigInt squared = (base * base) % mod;
+    BigInt squared = base.mod_sqr(mod); //(base * base) % mod;
     xs[0] = base;
     xs[0] %= mod;
     for(int i = 1; i < m/2; ++i) {
-	xs[i] = xs[i-1] * squared;
-	xs[i] %= mod;
+	xs[i] = xs[i-1].mod_mul(squared, mod);
     }
 
-    std::string bits = exp.ToBinary();
 
     std::vector<std::string> windows;
 
-    auto window_it = bits.rbegin();
-    for(; window_it + k < bits.rend(); ) {
-	if(*window_it == '1') {
-	    std::string window(window_it, window_it + k);
+    {
+	std::string bits = exp.ToBinary();
+	auto window_it = bits.rbegin();
+	for(; window_it + k < bits.rend(); ) {
+	    if(*window_it == '1') {
+		std::string window(window_it, window_it + k);
+		std::reverse(window.begin(), window.end());
+		windows.push_back(window);
+		window_it += k;
+	    } else {
+		int i = 0;
+		while(*(window_it + i) == '0') {
+		    ++i;
+		}
+		windows.push_back(std::string(window_it, window_it + i));	    
+		window_it += i;
+	    }
+	}    
+	if(window_it < bits.rend()) {
+	    std::string window(window_it, bits.rend());
+	    window.resize(k, 0);
 	    std::reverse(window.begin(), window.end());
 	    windows.push_back(window);
-	    window_it += k;
-	} else {
-	    int i = 0;
-	    while(*(window_it + i) == '0') {
-		++i;
-	    }
-	    windows.push_back(std::string(window_it, window_it + i));	    
-	    window_it += i;
 	}
-    }    
-    if(window_it < bits.rend()) {
-	std::string window(window_it, bits.rend());
-	window.resize(k, 0);
-	std::reverse(window.begin(), window.end());
-	windows.push_back(window);
     }
-
+    
     BigInt result = BigInt::ONE;
     
     limb_t index = stoll(*(windows.rbegin()), nullptr,2);
@@ -149,7 +150,7 @@ BigInt BigInt::modexp_sliding_window(BigInt& base, BigInt& exp, BigInt& mod, int
 
 	limb_t index = stoll(*it, nullptr, 2);
 	if(index) {
-	    result = result.mod_mul(xs[index/2], mod);
+	    result = result.mod_mul(xs[index>>1], mod);
 	}
     }
 
