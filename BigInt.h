@@ -8,6 +8,7 @@
 #include <climits>
 #include <bitset>
 #include <algorithm>
+#include <chrono>
 
 typedef unsigned long long limb_t;
 
@@ -63,8 +64,8 @@ class BigInt {
 
 
    	BigInt gcd(const BigInt& rhs) const;
-	limb_t log2(limb_t) const;
-	BigInt log2(BigInt&) const;
+	limb_t log2(const limb_t) const;
+	BigInt log2(const BigInt&) const;
 	BigInt& lshift(int);
 	BigInt& lLimbShift(int);
 	BigInt& rLimbShift(int);
@@ -72,6 +73,8 @@ class BigInt {
 	BigInt pow(BigInt exp) const;
 	BigInt abs(const BigInt&) const;
 
+	BigInt genRandomBits(const BigInt& bits) const;
+	BigInt genRandomNum(const BigInt& high) const;
 	BigInt genRandomNum(const BigInt& low, const BigInt& high) const;
 	BigInt genProbabalisticPrime(const BigInt& low, const BigInt& high) const;
 	BigInt genPrime(const BigInt& low,  const BigInt& high) const;
@@ -83,6 +86,7 @@ class BigInt {
 	BigInt mod_sqr(BigInt& mod) const;
 	BigInt pow(BigInt& exp, BigInt& mod) const;
 
+	BigInt naiveMul(const BigInt& n1, const BigInt& n2);
     
     private:
 	limb_t base;    
@@ -92,7 +96,13 @@ class BigInt {
 
 	//Multiplication
     	BigInt karatsuba(const BigInt& n1, const BigInt& n2);
-	BigInt naiveMul(const BigInt& n1, const BigInt& n2);
+	void karatsuba(const std::vector<limb_t>& n1, const std::vector<limb_t>& n2, std::vector<limb_t>& scratch, 
+			unsigned scratch_offset, unsigned n1l_offset, unsigned n1_size, 
+			unsigned n2l_offset, unsigned n2_size );
+	
+	void naiveMul(std::vector<limb_t>::const_iterator n1, std::vector<limb_t>::const_iterator n2, 
+			std::vector<limb_t>::iterator scratch, unsigned n1_size, unsigned n2_size );
+	//BigInt naiveMul(const BigInt& n1, const BigInt& n2);
 	BigInt naiveMul(const BigInt& n1, const limb_t& n2);
 
 	//Division

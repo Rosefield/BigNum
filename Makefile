@@ -1,5 +1,5 @@
 CC = clang
-CFLAGS = --std=c++11 -lstdc++ -march=native -O3 -Wall -Wno-comment
+CFLAGS = --std=c++11 -lstdc++ -march=native -O2 -Wall -Wno-comment
 DEBUG = -g -D_PRINT_VALS #-g
 OBJS = Test.o BigIntCore.o BigIntModular.o
 

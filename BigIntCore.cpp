@@ -341,7 +341,7 @@ BigInt& BigInt::operator-=(const BigInt& rhs){
 BigInt& BigInt::operator*=(const BigInt& rhs){
   
   bool neg = this->negative != rhs.negative;
-    if(this->size() < 20 || rhs.size() < 20 || this->size() + rhs.size() < 70) {
+    if(this->size() < 20 || rhs.size() < 20 || this->size() + rhs.size() < 80) {
 	*this = std::move(naiveMul(*this, rhs));
     } else {
     	*this = std::move(karatsuba(*this, rhs));
@@ -496,14 +496,14 @@ BigInt BigInt::gcd(const BigInt& rhs) const{
     }
 }
 
-limb_t BigInt::log2(limb_t lt) const {
+limb_t BigInt::log2(const limb_t lt) const {
     if(lt == 0) return 0;
     limb_t ret = 0;
     asm("bsrq %1, %0" : "=r" (ret) : "r" (lt));
     return ret;
 }
 
-BigInt BigInt::log2(BigInt& num) const {
+BigInt BigInt::log2(const BigInt& num) const {
     BigInt ret = static_cast<limb_t>((num.size() -1) * bits);
     ret += log2(num.limbs[num.size() -1]);
     return ret;
@@ -578,19 +578,39 @@ BigInt BigInt::pow(BigInt exp) const {
 */
 //Currently horribly inefficient and it is more optimal to just use naiveMul even at 140 limbs
 BigInt BigInt::karatsuba(const BigInt& n1, const BigInt& n2) {
-    if(n1.size() < 30 || n2.size() < 30 || n1.size() + n2.size() < 1000) {
+    if(n1.size() < 20 || n2.size() < 20 || n1.size() + n2.size() < 80) {
 	return naiveMul(n1, n2);
     }
 
+    
+    std::vector<limb_t> scratch(n1.size() + n2.size(), 0);
+
+    karatsuba(n1.limbs, n2.limbs, scratch, 0, 0, n1.size(), 0, n2.size());     
+    
+    while(scratch.size() > 1){
+	if(scratch.back() != 0) { break; }
+	scratch.pop_back();
+    }
+
+    BigInt result;
+    result.limbs = std::move(scratch);
+
+
+    return result;
+    
+    
+    
     //m is chosen to be Ciel(n/2) as that minimizes the number of recursion steps
     //necessary. A number of size n would have limbs of powers 0,1,2,...,n-1
-    int m = n1.size() > n2.size() ? (n2.size() +1) /2 : (n1.size() +1) /2;
+    /*
+    int m = (n1.size() > n2.size()) ? (n2.size() + 1)/2 : (n1.size() +1)/2;
 
     BigInt n1l, n1h, n2l, n2h;
     BigInt z0, z1, z2;
 
     //n1l, n2l are the portions of n1, n2 that are less than B^m
     //n1h, n2h are the portions of n1, n2 that are equal or greater than B^m
+    //Makes a copy of the memory, thus memory usage is exponential in recursive depth right now
     n1l = n1.lowerNLimbs(m);
     n1h = n1.highNLimbs(n1.size() - m);
     n2l = n2.lowerNLimbs(m);
@@ -617,6 +637,229 @@ BigInt BigInt::karatsuba(const BigInt& n1, const BigInt& n2) {
     //but removes the need for calling operator+()
 
     return z2;
+    /**/
+}
+
+void BigInt::karatsuba(const std::vector<limb_t>& n1, const std::vector<limb_t>& n2, std::vector<limb_t>& scratch, 
+			unsigned scratch_offset, unsigned n1l_offset, unsigned n1_size, 
+			unsigned n2l_offset, unsigned n2_size ) {
+    if(n1_size < 20 || n2_size < 20 || n1_size + n2_size < 80) {
+	naiveMul(n1.begin() + n1l_offset, n2.begin() + n2l_offset, scratch.begin() + scratch_offset, n1_size, n2_size);
+	return;
+    }
+     
+    int m = n1_size > n2_size ? (n2_size + 1)/2 : (n1_size + 1)/2;
+
+    //z0
+    karatsuba(n1, n2, scratch, scratch_offset, n1l_offset, m, n2l_offset, m);
+
+    //z2
+    karatsuba(n1, n2, scratch, scratch_offset + 2*m, n1l_offset + m, n1_size -m, n2l_offset + m, n2_size -m);
+    
+    std::vector<limb_t> n1l(n1.begin() + n1l_offset, n1.begin() + n1l_offset + m);
+    std::vector<limb_t> n2l(n2.begin() + n2l_offset, n2.begin() + n2l_offset + m);
+
+    if(n1_size - m > m) {
+	n1l.resize(n1_size - m, 0);
+    }
+    if(n2_size - m > m) {
+	n2l.resize(n2_size - m, 0);
+    }
+
+    limb_t carry = 0;
+    auto add_with_carry = [&](limb_t a, limb_t b) {
+	    a += b;
+	    a += carry;
+	    carry = a >> bits;;
+	    a -= this->base * carry;
+	    return a; 
+	};
+    
+    std::transform(n1.begin() + n1l_offset + m, n1.begin() + n1l_offset + n1_size, 
+		    n1l.begin(), n1l.begin(), add_with_carry);
+    if(carry) {
+	if(n1_size - m == n1l.size()) {
+	    n1l.push_back(carry);
+	} else {
+	    n1l[n1_size -m] += carry;
+	    if(n1l[n1_size -m] >= this->base) {
+		carry = n1l[n1_size -m] >> bits;
+		n1l[n1_size -m] &= this->base -1;
+		n1l.push_back(carry);
+	    }
+	}
+    }
+
+    carry = 0;
+    
+    std::transform(n2.begin() + n2l_offset + m, n2.begin() + n2l_offset + n2_size, 
+		    n2l.begin(), n2l.begin(), add_with_carry);
+    if(carry) {
+	if(n2_size - m == n2l.size()) {
+	    n2l.push_back(carry);
+	} else {
+	    n2l[n2_size -m] += carry;
+	    if(n2l[n2_size -m] >= this->base) {
+		carry = n2l[n2_size -m] >> bits;
+		n2l[n2_size -m] &= this->base -1;
+		n2l.push_back(carry);
+	    }
+	}
+    }
+
+    std::vector<limb_t> z1(n1l.size() + n2l.size(), 0);
+    //z1
+    karatsuba(n1l, n2l, z1, 0, 0, n1l.size(), 0, n2l.size());
+
+    
+    carry = 0;
+    auto sub_with_carry = [&](limb_t a, limb_t b) {
+	    limb_t c = b - a - carry;
+	    carry = c >= this->base;
+	    c += carry * this->base;
+	    return c;
+	};
+
+    //z1 -= z2
+    std::transform(scratch.begin() + scratch_offset, scratch.begin() + scratch_offset + 2*m, 
+		    z1.begin(), z1.begin(), sub_with_carry);
+    
+    z1[2*m - 1 + carry] -= carry;
+    
+    carry = 0;
+    //z1 -= z0
+    std::transform(scratch.begin() + scratch_offset + 2*m, scratch.begin() + scratch_offset + n1_size + n2_size, 
+		    z1.begin(), z1.begin(), sub_with_carry);
+    
+    z1[n1_size + n2_size - 2*m - 1 + carry] -= carry;
+    
+    carry = 0;
+
+    //z0 * base^{2m} + z1 * base^m + z2
+    std::transform(z1.begin(), z1.end(), scratch.begin() + scratch_offset + m,
+		     scratch.begin() + scratch_offset + m, add_with_carry);
+    if(carry) {
+	scratch[scratch_offset + m + z1.size()] += carry;
+	if(scratch[scratch_offset + m + z1.size()] >= this->base) {
+	    std::cout << "with carry" << std::endl;
+	}
+    }
+
+}
+
+void BigInt::naiveMul(std::vector<limb_t>::const_iterator n1, std::vector<limb_t>::const_iterator n2, 
+			std::vector<limb_t>::iterator scratch, unsigned n1_size, unsigned n2_size ){
+    
+    if(n1_size == n2_size && std::equal(n1, n1 + n1_size, n2)) {
+	//HAC algorithm 14.16 for squaring
+	//http://cacr.uwaterloo.ca/hac/about/chap14.pdf
+	limb_t uv, c; //,u=0, v=0;
+	for(int i = 0; i < n1_size; ++i) {
+	    uv = *(scratch + i + i) + *(n1 + i) * *(n1 +i);
+	    //u = uv >> bits;
+	    //v = uv & (base -1);
+	    c = uv >> bits;
+	    *(scratch + i + i) = uv & (base-1);
+	    for(int j = i+1; j< n1_size; ++j) {
+	    	uv = *(scratch + i + j) + 2* *(n1 + i)* *(n1 + j) + c;
+		//u = uv >> bits;
+		//v = uv & (base -1);
+		*(scratch + i + j) = uv & (base -1);
+		c = uv >> bits;
+	    }
+
+	    *(scratch + i + n1_size) = c;
+	}
+	
+	if(*(scratch + n1_size + n1_size -1) >= base) {
+	    c = *(scratch + n1_size + n1_size -1) >> bits;
+	    *(scratch + n1_size + n1_size -1) &= (base -1);
+	    *(scratch + n1_size + n2_size) = c;
+	}
+
+	return;
+    }
+
+
+
+
+    for(int j = 0; j < n2_size; ++j) {
+	*(scratch + j) = (*n1) * *(n2 + j);
+    }
+
+    *(scratch + 1) += *scratch >> bits;
+    *scratch &= (base -1);
+
+    /**
+    * As each limb is only 31 bits long we can add up to 4 multiplications and a carry without a 64bit int overflowing
+    * Unrolling loops, because I might as well find out if it is productive
+    * Taken from running valgrind --tool=callgrind --cache-sim=yes --branch-sim=yes ./Test using test4kModExp()
+    *		ir	 dr	    dw	     bc		bcm
+    *normal	578m	110m	    60m	    34m		.9m
+    *unrolled	404m	128.5m	    75.8m   36.9m	2.2m
+    * Clearly the compiler is magic, but it seems that the unrolled version is more efficient and running the multiplication
+    * in testMulRandom1024Bit() 100,000 times gives 
+    * normal   Avg time: 4.86*10^-6
+    * unrolled Avg time: 3.95*10^-6
+    */
+    
+    int i = 1;
+    for(; i + 4 < n1_size; ++i) {
+	for(int j = 0; j < n2_size; j++) {
+	    *(scratch + i+j) += *(n1 +i) * *(n2 + j);
+	}
+	*(scratch + i + 1) += *(scratch + i) >> bits;
+	*(scratch + i) &= (base -1);
+	++i;
+
+	for(int j = 0; j < n2_size; j++) {
+	    *(scratch + i + j) += *(n1 + i) * *(n2 + j);
+	}
+	*(scratch +i + 1) += *(scratch +i) >> bits;
+	*(scratch +i) &= (base -1);
+	++i;
+
+	for(int j = 0; j < n2_size; j++) {
+	    *(scratch + i + j) += *(n1 + i) * *(n2 +j);
+	}
+	*(scratch + i + 1) += *(scratch + i) >> bits;
+	*(scratch +i) &= (base -1);
+	
+	//carry after every 4 mult-adds
+	for(auto it = scratch + i + 1; it < scratch + i + n2_size; ++it) {
+	    *(it + 1) += *it >> bits;
+	    *it &= (base - 1);		    	    
+	}	
+	++i;
+
+	for(int j = 0; j < n2_size; j++) {
+	    *(scratch+i+j) += *(n1 +i) * *(n2 + j);
+	}
+	*(scratch + i + 1) += *(scratch + i) >> bits;
+	*(scratch +i) &= (base -1);
+    }
+
+    for(; i < n1_size; ++i) {
+	for(int j = 0; j < n2_size; j++) {
+	    *(scratch + i + j) += *(n1 + i) * *(n2 + j);
+	}
+	*(scratch + i + 1) += *(scratch + i) >> bits;
+	*(scratch +i) &= (base -1);
+	if(i % 4 == 3) {
+	    for(auto it = scratch + i + 1; it < scratch + i + n2_size; ++it) {
+		*(it + 1) += *it >> bits;
+		*it &= (base - 1);		    	    
+	    }
+	}
+    }
+        
+    
+    
+    for(auto it = scratch + n1_size; it < scratch + n1_size + n2_size -1; ++it) {
+	*(it +1) += *it >> bits;
+	*it &= (base -1);
+    } 
+         
 }
 
 //Performs a carry when a limb is no longer going to get written to, or after every 4 rows are used
@@ -656,6 +899,7 @@ BigInt BigInt::naiveMul(const BigInt& n1, const BigInt& n2) {
 	}
 	
 	if(tmp.limbs.back() >= base) {
+	    std::cout << "squared push_back needed" << std::endl;
 	    c = tmp.limbs.back() >> bits;
 	    tmp.limbs.back() &= (base -1);
 	    tmp.limbs.push_back(c);
@@ -1021,25 +1265,45 @@ void BigInt::div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * r
     }
 }
 
-/*
-BigInt BigInt::genRandomBits(const BigInt& bits) const {
 
-    return BigInt::ZERO;
+BigInt BigInt::genRandomBits(const BigInt& bits) const {
+    //Static to seed and initialize only once
+    static std::default_random_engine generator(std::chrono::system_clock::now().time_since_epoch().count());
+    std::uniform_int_distribution<limb_t> distribution(0,base-1);
+
+    BigInt result;    
+
+    //For the moment limit to 2^31 bits generated
+    limb_t i = 0;
+    for(; i < bits.limbs[0] - this->bits; i += this->bits) {
+	result.limbs.push_back(distribution(generator));	
+    }
+    i = bits.limbs[0] - i;
+    if(i != 0){
+        std::uniform_int_distribution<limb_t> extra_distribution(0, (1 << i) -1);
+	result.limbs.push_back(extra_distribution(generator));
+    }
+
+    return result;
 }
 
 BigInt BigInt::genRandomNum(const BigInt& high) const {
-
-
-    return BigInt::ZERO;
+    BigInt bits = log2(high);
+    BigInt result = genRandomBits(bits);
+    //Result has at least a 50% chance of being lesser than high, and so the probability of generating
+    //a number less than high converges to 1 exponentially quickly
+    while(result >= high) {
+	result = genRandomBits(bits);
+    }
+    return result;
 }
-*/
+
 
 BigInt BigInt::genRandomNum(const BigInt& low, const BigInt& high) const {
-    //gen log2(high) random bits
-    //check that num < high
-    //check that num > low
-
-    return BigInt::ZERO;
+    BigInt diff = high - low;
+    BigInt result = low;
+    result += genRandomNum(diff);
+    return result;
 }
 
 
@@ -1048,7 +1312,7 @@ BigInt BigInt::genProbabalisticPrime(const BigInt& low, const BigInt& high) cons
     //Check if number is divisible by small primes
     //Run a few (~10) tests of Miller-Rabin
     //If miller-rabin return prime, return number, else gen new random number and repeat
-
+    
 
     return BigInt::ZERO;
 }
