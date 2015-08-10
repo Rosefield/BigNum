@@ -227,6 +227,13 @@ BigInt BigInt::operator+(const BigInt& rhs) const{
     tmp += rhs;
     return tmp;
 }
+
+BigInt BigInt::operator++(int){
+    BigInt tmp(*this);
+    ++(*this);
+    return tmp;
+}
+
 BigInt BigInt::operator-(const BigInt& rhs) const{
     BigInt tmp(*this);
     tmp -= rhs;
@@ -291,6 +298,11 @@ BigInt& BigInt::operator+=(const BigInt& rhs){
 	this->limbs.push_back(carry);
     }
 
+    return *this;
+}
+
+BigInt& BigInt::operator++() {
+    *this += BigInt::ONE;
     return *this;
 }
 
@@ -597,47 +609,6 @@ BigInt BigInt::karatsuba(const BigInt& n1, const BigInt& n2) {
 
 
     return result;
-    
-    
-    
-    //m is chosen to be Ciel(n/2) as that minimizes the number of recursion steps
-    //necessary. A number of size n would have limbs of powers 0,1,2,...,n-1
-    /*
-    int m = (n1.size() > n2.size()) ? (n2.size() + 1)/2 : (n1.size() +1)/2;
-
-    BigInt n1l, n1h, n2l, n2h;
-    BigInt z0, z1, z2;
-
-    //n1l, n2l are the portions of n1, n2 that are less than B^m
-    //n1h, n2h are the portions of n1, n2 that are equal or greater than B^m
-    //Makes a copy of the memory, thus memory usage is exponential in recursive depth right now
-    n1l = n1.lowerNLimbs(m);
-    n1h = n1.highNLimbs(n1.size() - m);
-    n2l = n2.lowerNLimbs(m);
-    n2h = n2.highNLimbs(n2.size() - m);  
-
-    z0 = karatsuba(n1l, n2l); 
-    z2 = karatsuba(n1h, n2h);
-    
-    //Same as 
-    //z1 = karatsuba((n1l + n1h), (n2l + n2h));
-    n1l += n1h;
-    n2l += n2h;
-    z1 = karatsuba(n1l, n2l);
-    
-    z1 -= z2;
-    z1 -= z0;
-
-    z2.lLimbShift(2*m);
-    z2 += z1.lLimbShift(m);
-    z2 += z0;
-
-    //This is the same as, 
-    //return (z2.lLimbShift(2*m)) + (z1.lLimbShift(m)) + (z0);
-    //but removes the need for calling operator+()
-
-    return z2;
-    /**/
 }
 
 void BigInt::karatsuba(const std::vector<limb_t>& n1, const std::vector<limb_t>& n2, std::vector<limb_t>& scratch, 

@@ -42,12 +42,14 @@ class BigInt {
 
 	BigInt& operator=(BigInt rhs);
 	BigInt operator+(const BigInt& rhs) const;
+	BigInt operator++(int);
 	BigInt operator-(const BigInt& rhs) const;
 	BigInt operator/(const BigInt& rhs) const;
 	BigInt operator*(const BigInt& rhs) const;
 	BigInt operator*(const limb_t& rhs) const;
 	BigInt operator%(const BigInt& rhs) const;
 	BigInt& operator+=(const BigInt& rhs);
+	BigInt& operator++();
 	BigInt& operator*=(const BigInt& rhs);
 	BigInt& operator*=(const limb_t& rhs);
 	BigInt& operator/=(const BigInt& rhs);
