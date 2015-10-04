@@ -5,20 +5,20 @@
 //Currently everything is very naive and is equivalent to just doing the operation followed by a
 //Modular reduction. This can all be improved in the future.
 
-BigInt BigInt::mod_add(BigInt& add, BigInt& mod) const {
+BigInt BigInt::mod_add(const BigInt& add, const BigInt& mod) const {
     BigInt tmp(*this);
     tmp += add;
     tmp %= mod;
     return tmp;
 }
 
-BigInt BigInt::mod_sub(BigInt& sub, BigInt& mod) const { 
+BigInt BigInt::mod_sub(const BigInt& sub, const BigInt& mod) const { 
     BigInt tmp(*this);
     tmp -= sub;
     tmp %= mod;
     return tmp;
 }
-BigInt BigInt::mod_mul(BigInt& mul, BigInt& mod) const {
+BigInt BigInt::mod_mul(const BigInt& mul, const BigInt& mod) const {
     BigInt tmp(*this);
     tmp *= mul;
     tmp %= mod;
@@ -30,7 +30,7 @@ BigInt BigInt::mod_mul(BigInt& mul, BigInt& mod) const {
 * Slightly modified version of the extended euclidean algorithm since we don't care what the multiplier
 * on the modulus is.
 */
-BigInt BigInt::mod_inv(BigInt& mod) const { 
+BigInt BigInt::mod_inv(const BigInt& mod) const { 
     BigInt t = BigInt::ZERO, newt = BigInt::ONE;
     BigInt r = mod, newr = *this;
 
@@ -54,7 +54,7 @@ BigInt BigInt::mod_inv(BigInt& mod) const {
     return t;
 }
 
-BigInt BigInt::mod_sqr(BigInt& mod) const { 
+BigInt BigInt::mod_sqr(const BigInt& mod) const { 
     BigInt tmp(*this);
     tmp *= tmp;
     tmp %= mod;
@@ -62,7 +62,7 @@ BigInt BigInt::mod_sqr(BigInt& mod) const {
 }
 
 
-BigInt BigInt::pow(BigInt& exp, BigInt& mod) const {
+BigInt BigInt::pow(const BigInt& exp, const BigInt& mod) const {
     if(exp == BigInt::ZERO) {
 	return BigInt::ONE;
     } else if(exp == BigInt::ONE) {
@@ -73,14 +73,14 @@ BigInt BigInt::pow(BigInt& exp, BigInt& mod) const {
 	BigInt base(*this);
 	BigInt log = log2(exp);
 	if(log >= 2048) {
-	    return modexp_sliding_window(base, exp, mod, 7);	
+	    return BigInt::modexp_sliding_window(base, exp, mod, 7);	
 	} else if(log >= 1024) {
-	    return modexp_sliding_window(base, exp, mod, 6);
+	    return BigInt::modexp_sliding_window(base, exp, mod, 6);
 	} else if(log >= 384) {
 	    //Defaults to k=5, but be explicit here to show similarities to the above call
-	    return modexp_sliding_window(base, exp, mod, 5);
+	    return BigInt::modexp_sliding_window(base, exp, mod, 5);
 	} else {
-	    return modexp_montgomery(base, exp, mod);
+	    return BigInt::modexp_montgomery(base, exp, mod);
 	}
     }
     return BigInt::ZERO;   
@@ -91,7 +91,7 @@ BigInt BigInt::pow(BigInt& exp, BigInt& mod) const {
 * Partitions the exponent into variable-length zero words, and constant length non-zero words to minimize 
 * the number of multiplications required compared to an m-ary multiplication.
 */
-BigInt BigInt::modexp_sliding_window(BigInt& base, BigInt& exp, BigInt& mod, int k) const {
+BigInt BigInt::modexp_sliding_window(const BigInt& base, const BigInt& exp, const BigInt& mod, int k) {
 
     limb_t m = 1 << k;
 
@@ -109,55 +109,55 @@ BigInt BigInt::modexp_sliding_window(BigInt& base, BigInt& exp, BigInt& mod, int
     std::vector<std::string> windows;
 
     {
-	std::string bits = exp.ToBinary();
-	auto window_it = bits.rbegin();
-	for(; window_it + k < bits.rend(); ) {
-	    if(*window_it == '1') {
-		std::string window(window_it, window_it + k);
-		std::reverse(window.begin(), window.end());
-		windows.push_back(window);
-		window_it += k;
-	    } else {
-		int i = 0;
-		while(*(window_it + i) == '0') {
-		    ++i;
-		}
-		windows.push_back(std::string(window_it, window_it + i));	    
-		window_it += i;
-	    }
-	}    
-	if(window_it < bits.rend()) {
-	    std::string window(window_it, bits.rend());
-	    window.resize(k, 0);
-	    std::reverse(window.begin(), window.end());
-	    windows.push_back(window);
-	}
+        std::string bits = exp.ToBinary();
+        auto window_it = bits.rbegin();
+        for(; window_it + k < bits.rend(); ) {
+            if(*window_it == '1') {
+                std::string window(window_it, window_it + k);
+                std::reverse(window.begin(), window.end());
+                windows.push_back(window);
+                window_it += k;
+            } else {
+                int i = 0;
+                while(*(window_it + i) == '0') {
+                    ++i;
+                }
+                windows.push_back(std::string(window_it, window_it + i));	    
+                window_it += i;
+            }
+        }    
+        if(window_it < bits.rend()) {
+            std::string window(window_it, bits.rend());
+            window.resize(k, 0);
+            std::reverse(window.begin(), window.end());
+            windows.push_back(window);
+        }
     }
     
     BigInt result = BigInt::ONE;
     
-    limb_t index = stoll(*(windows.rbegin()), nullptr,2);
+    limb_t index = std::strtoll(windows.rbegin()->c_str(), nullptr,2);
     if(index) {
-	result = xs[index/2];
+        result = xs[index/2];
     }
 
     //The windows are stored starting from the lsb of the exponential, start from
     //the top and work down
     for(auto it = windows.rbegin() + 1; it < windows.rend(); ++it) {
-	for(int i = 0; i < it->length(); ++i) {
-	    result = result.mod_sqr(mod);
-	}
+        for(int i = 0; i < it->length(); ++i) {
+            result = result.mod_sqr(mod);
+        }
 
-	limb_t index = stoll(*it, nullptr, 2);
-	if(index) {
-	    result = result.mod_mul(xs[index>>1], mod);
-	}
+        limb_t index = std::strtoll(it->c_str(), nullptr, 2);
+        if(index) {
+            result = result.mod_mul(xs[index>>1], mod);
+        }
     }
 
     return result;
 }
 
-BigInt BigInt::modexp_montgomery(BigInt& base, BigInt& exp, BigInt& mod) const {
+BigInt BigInt::modexp_montgomery(const BigInt& base, const BigInt& exp, const BigInt& mod) {
     
     BigInt t1(base % mod);
     BigInt t2((t1 * t1) % mod);

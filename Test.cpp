@@ -456,6 +456,43 @@ void test4kModExp() {
     std::cout << "4k ModExp Correct? " << (actual == c) << std::endl;
 }
 
+
+void testRandomBitsGeneration() {
+    auto num = BigInt::genRandomBits(512);
+
+    std::cout << num.ToDecimal() << std::endl;
+    std::cout << "testRandomBitsGeneration correct? " << (BigInt::log2(num) <= 512) << std::endl;
+}
+
+void testIsLikelyPrime() {
+    BigInt num{3413};
+
+    std::cout << "testIsLikelyPrime for small prime correct? " << BigInt::isLikelyPrime(num) << std::endl;
+
+
+    BigInt largerPrime = BigInt::TWO.pow(2203) - BigInt::ONE;
+
+    std::cout << "testIsLikelyPrime for larger prime correct? " << BigInt::isLikelyPrime(largerPrime) << std::endl;
+
+    BigInt largeNonPrime = (BigInt::TWO.pow(1279) - BigInt::ONE) * largerPrime;
+
+    std::cout << largeNonPrime.ToDecimal() << std::endl;
+    std::cout << "testIsLikelyPrime for large composite correct? " << !BigInt::isLikelyPrime(largeNonPrime) << std::endl;
+
+}
+
+void testGenRandomPrime() {
+    auto num = BigInt::genRandomBits(1024);
+
+    std::cout << "high end: " << num.ToDecimal() << std::endl;
+    auto prime = BigInt::genLikelyPrime(BigInt::ZERO, num);
+
+    std::cout << prime.ToDecimal() << std::endl;
+
+
+}
+
+
 int main() {
 
 /*
@@ -500,9 +537,13 @@ int main() {
     //Modexp Tests
     testSmallModExp();
     test512ModExp();
-*/    test4kModExp();
+    test4kModExp();
 /**/
 
+
+//    testRandomBitsGeneration();
+//    testIsLikelyPrime();
+    testGenRandomPrime();
 
 }
 

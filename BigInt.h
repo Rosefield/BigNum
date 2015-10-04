@@ -22,6 +22,7 @@ class BigInt {
 	
 	const static BigInt ZERO;
 	const static BigInt ONE;
+    const static BigInt TWO;
 	const static BigInt TEN;
 	
 	BigInt();   
@@ -66,27 +67,35 @@ class BigInt {
 
 
    	BigInt gcd(const BigInt& rhs) const;
-	limb_t log2(const limb_t) const;
-	BigInt log2(const BigInt&) const;
+	static limb_t log2(const limb_t);
+	static BigInt log2(const BigInt&);
 	BigInt& lshift(int);
+    BigInt& rshift(int);
 	BigInt& lLimbShift(int);
 	BigInt& rLimbShift(int);
 	
 	BigInt pow(BigInt exp) const;
 	BigInt abs(const BigInt&) const;
 
-	BigInt genRandomBits(const BigInt& bits) const;
-	BigInt genRandomNum(const BigInt& high) const;
-	BigInt genRandomNum(const BigInt& low, const BigInt& high) const;
-	BigInt genProbabalisticPrime(const BigInt& low, const BigInt& high) const;
-	BigInt genPrime(const BigInt& low,  const BigInt& high) const;
+    //Random num generation
+	static BigInt genRandomBits(const BigInt& bits);
+	static BigInt genRandomNum(const BigInt& high);
+	static BigInt genRandomNum(const BigInt& low, const BigInt& high);
 
-	BigInt mod_add(BigInt& add, BigInt& mod) const;
-	BigInt mod_sub(BigInt& sub, BigInt& mod) const;
-	BigInt mod_mul(BigInt& mul, BigInt& mod) const;
-	BigInt mod_inv(BigInt& mod) const;
-	BigInt mod_sqr(BigInt& mod) const;
-	BigInt pow(BigInt& exp, BigInt& mod) const;
+    //prime checking
+    bool checkFermatWitness(const BigInt& witness) const;
+    bool checkMillerRabinWitness(const BigInt& witness) const;
+    bool millerRabinLikelyPrime(int k = 10) const;
+    static bool isLikelyPrime(const BigInt& num);
+	static BigInt genLikelyPrime(const BigInt& low, const BigInt& high);
+	static BigInt genPrime(const BigInt& low,  const BigInt& high);
+
+	BigInt mod_add(const BigInt& add, const BigInt& mod) const;
+	BigInt mod_sub(const BigInt& sub, const BigInt& mod) const;
+	BigInt mod_mul(const BigInt& mul, const BigInt& mod) const;
+	BigInt mod_inv(const BigInt& mod) const;
+	BigInt mod_sqr(const BigInt& mod) const;
+	BigInt pow(const BigInt& exp, const BigInt& mod) const;
 
 	BigInt naiveMul(const BigInt& n1, const BigInt& n2);
     
@@ -112,8 +121,8 @@ class BigInt {
 	void div(BigInt * dv, const BigInt& num, const BigInt& denom, BigInt * rem) const;
 
 	//Exponentiation
-	BigInt modexp_sliding_window(BigInt& base, BigInt& exp, BigInt& mod, int k = 5) const;
-	BigInt modexp_montgomery(BigInt& base, BigInt& exp, BigInt& mod) const;
+	static BigInt modexp_sliding_window(const BigInt& base, const BigInt& exp, const BigInt& mod, int k = 5);
+	static BigInt modexp_montgomery(const BigInt& base, const BigInt& exp, const BigInt& mod);
 
 	//Limb manipulation
 	BigInt highLimb() const;
